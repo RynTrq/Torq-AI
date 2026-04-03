@@ -56,6 +56,8 @@ const useConvexClerkAuth = () => {
 };
 
 export const Providers = ({ children }: { children: React.ReactNode }) => {
+  const clerkPublishableKey =
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim();
   const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
   const convex = useMemo(() => {
     if (!convexUrl) {
@@ -65,8 +67,22 @@ export const Providers = ({ children }: { children: React.ReactNode }) => {
     return new ConvexReactClient(convexUrl);
   }, [convexUrl]);
 
+  if (!clerkPublishableKey) {
+    return (
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="dark"
+        enableSystem
+        disableTransitionOnChange
+      >
+        <EnvironmentSetupView missingClerk missingConvex={!convex} />
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ClerkProvider
+      publishableKey={clerkPublishableKey}
       afterSignOutUrl="/"
       appearance={{
         variables: {
@@ -96,7 +112,7 @@ export const Providers = ({ children }: { children: React.ReactNode }) => {
             </AuthLoading>
           </ConvexProviderWithAuth>
         ) : (
-          <EnvironmentSetupView />
+          <EnvironmentSetupView missingClerk={false} missingConvex />
         )}
       </ThemeProvider>
     </ClerkProvider>
