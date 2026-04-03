@@ -1,0 +1,27 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="48" height="48" rx="14" fill="url(#bg)" />
+  <rect x="1" y="1" width="46" height="46" rx="13" stroke="url(#border)" />
+  <circle cx="24" cy="24" r="13.5" stroke="url(#ring)" stroke-width="3.5" />
+  <path d="M16 15.5H32L27.25 20.25H24V33H19.5V20.25H11.25L16 15.5Z" fill="white" />
+  <path d="M25 24H34L28.5 32.5H20L25 24Z" fill="url(#spark)" />
+  <defs>
+    <linearGradient id="bg" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A" />
+      <stop offset="0.45" stop-color="#13223E" />
+      <stop offset="1" stop-color="#071120" />
+    </linearGradient>
+    <linearGradient id="border" x1="7" y1="3" x2="39" y2="48" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38BDF8" stop-opacity="0.55" />
+      <stop offset="1" stop-color="#8250DF" stop-opacity="0.12" />
+    </linearGradient>
+    <linearGradient id="ring" x1="12" y1="12" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#39C5FF" />
+      <stop offset="0.55" stop-color="#007ACC" />
+      <stop offset="1" stop-color="#9B6BFF" />
+    </linearGradient>
+    <linearGradient id="spark" x1="22" y1="22" x2="32" y2="33" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFC857" />
+      <stop offset="1" stop-color="#FF7A18" />
+    </linearGradient>
+  </defs>
+</svg>
