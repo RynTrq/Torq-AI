@@ -43,6 +43,15 @@ export const useMessages = (conversationId: Id<"conversations"> | null) => {
       return messages as Doc<"messages">[];
     },
     enabled: Boolean(conversationId),
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) => {
+      const messages = query.state.data as Doc<"messages">[] | undefined;
+      const isProcessing = messages?.some(
+        (message) => message.status === "processing",
+      );
+
+      return isProcessing ? 1500 : false;
+    },
   });
 
   return conversationId ? query.data : undefined;

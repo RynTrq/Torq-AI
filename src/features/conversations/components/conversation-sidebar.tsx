@@ -1,6 +1,7 @@
 import ky, { HTTPError } from "ky";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { 
   CopyIcon, 
   HistoryIcon, 
@@ -83,6 +84,7 @@ export const ConversationSidebar = ({
   ] = useState(false);
   const selectedModelId = useModelStore((state) => state.selectedModelId);
   const setSelectedModelId = useModelStore((state) => state.setSelectedModelId);
+  const queryClient = useQueryClient();
   const [now, setNow] = useState(() => Date.now());
   const lastAutoSwitchedMessageIdRef = useRef<string | null>(null);
 
@@ -154,6 +156,9 @@ export const ConversationSidebar = ({
       await ky.post("/api/messages/cancel", {
         json: { projectId },
       });
+      await queryClient.invalidateQueries({
+        queryKey: ["messages"],
+      });
     } catch (error) {
       toast.error(await getErrorMessage(error, "Unable to cancel request"));
     }
@@ -205,6 +210,13 @@ export const ConversationSidebar = ({
           modelId: selectedModelId,
         },
       }).json<{ warning?: string }>();
+
+      await queryClient.invalidateQueries({
+        queryKey: ["messages", conversationId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["conversations", projectId],
+      });
 
       if (response.warning) {
         toast.warning(response.warning);

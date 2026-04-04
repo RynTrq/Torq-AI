@@ -7,11 +7,11 @@ import { useTheme } from "next-themes";
 
 import "@xterm/xterm/css/xterm.css";
 
-interface PreviewTerminalProps {
+interface RunTerminalPanelProps {
   output: string;
 }
 
-export const PreviewTerminal = ({ output }: PreviewTerminalProps) => {
+export const RunTerminalPanel = ({ output }: RunTerminalPanelProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -23,7 +23,6 @@ export const PreviewTerminal = ({ output }: PreviewTerminalProps) => {
     latestOutputRef.current = output;
   }, [output]);
 
-  // Initialize terminal
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -94,7 +93,6 @@ export const PreviewTerminal = ({ output }: PreviewTerminalProps) => {
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    // Write existing output on mount
     if (latestOutputRef.current) {
       terminal.write(latestOutputRef.current);
       lastLengthRef.current = latestOutputRef.current.length;
@@ -113,7 +111,6 @@ export const PreviewTerminal = ({ output }: PreviewTerminalProps) => {
     };
   }, [resolvedTheme]);
 
-  // Write output
   useEffect(() => {
     if (!terminalRef.current) return;
 

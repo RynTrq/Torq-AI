@@ -8,6 +8,7 @@ export type RunnableLanguage =
 export type PreviewKind =
   | "html"
   | "markdown"
+  | "pdf"
   | "image"
   | "svg"
   | "json"
@@ -197,6 +198,9 @@ const TEXT_PREVIEW_EXTENSIONS = new Set([
   "txt",
   "log",
   "csv",
+  "css",
+  "scss",
+  "less",
   "yaml",
   "yml",
   "xml",
@@ -226,6 +230,10 @@ export const getPreviewKind = (fileName: string): PreviewKind | null => {
 
   if (extension === "md" || extension === "mdx") {
     return "markdown";
+  }
+
+  if (extension === "pdf") {
+    return "pdf";
   }
 
   if (extension === "svg") {
@@ -311,6 +319,8 @@ export const getMimeType = (fileName: string) => {
       return "text/markdown; charset=utf-8";
     case "svg":
       return "image/svg+xml";
+    case "pdf":
+      return "application/pdf";
     case "png":
       return "image/png";
     case "jpg":
