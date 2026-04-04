@@ -16,6 +16,18 @@ const authSecret =
     ? "torq-ai-dev-auth-secret"
     : undefined);
 
+const redactEmail = (email: string) => {
+  const [local, domain = ""] = email.split("@");
+
+  if (!local) {
+    return "unknown";
+  }
+
+  const visible = local.slice(0, 2);
+
+  return `${visible}${"*".repeat(Math.max(local.length - 2, 1))}@${domain}`;
+};
+
 const providers: NextAuthOptions["providers"] = [];
 
 if (githubId && githubSecret) {
@@ -45,6 +57,7 @@ providers.push(
       const password = credentials?.password;
 
       if (!email || !password) {
+        console.warn("[auth][credentials] Missing email or password");
         return null;
       }
 
@@ -52,13 +65,26 @@ providers.push(
         where: { email },
       });
 
-      if (!user?.passwordHash) {
+      if (!user) {
+        console.warn(
+          `[auth][credentials] User not found for ${redactEmail(email)}`,
+        );
+        return null;
+      }
+
+      if (!user.passwordHash) {
+        console.warn(
+          `[auth][credentials] No password set for ${redactEmail(email)}`,
+        );
         return null;
       }
 
       const isValid = await compare(password, user.passwordHash);
 
       if (!isValid) {
+        console.warn(
+          `[auth][credentials] Password mismatch for ${redactEmail(email)}`,
+        );
         return null;
       }
 
