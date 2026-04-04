@@ -4,7 +4,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
 import { AlertTriangleIcon, CloudCheckIcon, LoaderIcon, Trash2Icon } from "lucide-react";
-import { UserButton } from "@clerk/nextjs";
 import { formatDistanceToNow } from "date-fns";
 
 import { Button } from "@/components/ui/button";
@@ -15,8 +14,9 @@ import {
 } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ModelToggle } from "@/features/ai/components/model-toggle";
+import { UserMenu } from "@/features/auth/components/user-menu";
 
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 import { useProject, useRenameProject } from "../hooks/use-projects";
 import { DeleteProjectButton } from "./delete-project-button";
 
@@ -170,7 +170,7 @@ export const Navbar = ({
           <ModelToggle className="max-w-[188px]" />
           <ThemeToggle className="h-9 w-[78px]" />
           <div className="rounded-full border border-panel-border bg-panel-elevated p-1 shadow-[0_10px_24px_rgba(15,23,42,0.1)]">
-            <UserButton />
+            <UserMenu />
           </div>
         </div>
       </div>

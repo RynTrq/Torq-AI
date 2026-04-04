@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { Id } from "../../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 import { useCreateFile } from "../../hooks/use-files";
 import { useEditor } from "@/features/editor/hooks/use-editor";
 
@@ -84,7 +84,7 @@ export const CreateFileDialog = ({
     setIsSubmitting(true);
 
     try {
-      const fileId = await createFile({
+      const createdFile = await createFile({
         projectId,
         parentId,
         name: trimmedName,
@@ -93,8 +93,8 @@ export const CreateFileDialog = ({
 
       onOpenChange(false);
 
-      if (fileId) {
-        openFile(fileId, { pinned: true });
+      if (createdFile?._id) {
+        openFile(createdFile._id, { pinned: true });
       }
     } catch (error) {
       toast.error(

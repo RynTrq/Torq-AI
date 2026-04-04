@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 
-import { convex } from "@/lib/convex-client";
+import { requireOwnedProject } from "@/lib/data/authz";
+import { listProjectFiles } from "@/lib/data/server";
 import { getMimeType } from "@/lib/project-files";
-
-import { api } from "../../../../../../../convex/_generated/api";
-import { Id } from "../../../../../../../convex/_generated/dataModel";
 
 export const runtime = "nodejs";
 
@@ -17,37 +14,21 @@ export async function GET(
     params: Promise<{ projectId: string; path?: string[] }>;
   },
 ) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { projectId, path = [] } = await params;
-  const internalKey = process.env.TORQ_AI_CONVEX_INTERNAL_KEY;
 
-  if (!internalKey) {
+  try {
+    await requireOwnedProject(projectId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unauthorized";
     return NextResponse.json(
-      { error: "Internal key not configured" },
-      { status: 500 },
+      { error: message },
+      { status: message === "Unauthorized" ? 401 : 404 },
     );
   }
 
-  const project = await convex.query(api.system.getProjectById, {
-    internalKey,
-    projectId: projectId as Id<"projects">,
-  });
-
-  if (!project || project.ownerId !== userId) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
-
-  const files = await convex.query(api.system.getProjectFilesWithUrls, {
-    internalKey,
-    projectId: projectId as Id<"projects">,
-  });
-
+  const files = await listProjectFiles(projectId);
   const requestedPath = path.join("/");
+
   const file = files.find((candidate) => {
     if (candidate.type !== "file") {
       return false;

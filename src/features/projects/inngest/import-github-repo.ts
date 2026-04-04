@@ -1,18 +1,20 @@
-import ky from "ky";
 import { Octokit } from "octokit";
 import { isBinaryFile } from "isbinaryfile";
-import { NonRetriableError } from "inngest";
 
-import { convex } from "@/lib/convex-client";
 import { inngest } from "@/inngest/client";
-
-import { api } from "../../../../convex/_generated/api";
-import { Id } from "../../../../convex/_generated/dataModel";
+import {
+  clearProjectFiles,
+  createBinaryFile,
+  createFile,
+  createFolder,
+  updateProjectImportStatus,
+} from "@/lib/data/server";
+import { getMimeType } from "@/lib/project-files";
 
 interface ImportGithubRepoEvent {
   owner: string;
   repo: string;
-  projectId: Id<"projects">;
+  projectId: string;
   githubToken: string;
 }
 
@@ -20,14 +22,10 @@ export const importGithubRepo = inngest.createFunction(
   {
     id: "import-github-repo",
     onFailure: async ({ event, step, error }) => {
-      const internalKey = process.env.TORQ_AI_CONVEX_INTERNAL_KEY;
-      if (!internalKey) return;
-
       const { projectId } = event.data.event.data as ImportGithubRepoEvent;
 
       await step.run("set-failed-status", async () => {
-        await convex.mutation(api.system.updateImportStatus, {
-          internalKey,
+        await updateProjectImportStatus({
           projectId,
           status: "failed",
           error:
@@ -43,19 +41,10 @@ export const importGithubRepo = inngest.createFunction(
     const { owner, repo, projectId, githubToken } =
       event.data as ImportGithubRepoEvent;
 
-    const internalKey = process.env.TORQ_AI_CONVEX_INTERNAL_KEY;
-    if (!internalKey) {
-      throw new NonRetriableError("TORQ_AI_CONVEX_INTERNAL_KEY is not configured");
-    };
-
     const octokit = new Octokit({ auth: githubToken });
 
-    // Cleanup any existing files in the project
     await step.run("cleanup-project", async () => {
-      await convex.mutation(api.system.cleanup, { 
-        internalKey,
-        projectId
-      });
+      await clearProjectFiles(projectId);
     });
 
     const repository = await step.run("fetch-repo-metadata", async () => {
@@ -78,9 +67,6 @@ export const importGithubRepo = inngest.createFunction(
       return data;
     });
 
-    // Sort folders by depth so parents are created before children
-    // Input:  [{ path: "src/components" }, { path: "src" }, { path: "src/components/ui" }]
-    // Output: [{ path: "src" }, { path: "src/components" }, { path: "src/components/ui" }]
     const folders = tree.tree
       .filter((item) => item.type === "tree" && item.path)
       .sort((a, b) => {
@@ -90,10 +76,8 @@ export const importGithubRepo = inngest.createFunction(
         return aDepth - bDepth;
       });
 
-    // Return the folder map from the step so it can be used in subsequent steps
-    // (Inngest serializes step results, so we use a plain object instead of Map)
     const folderIdMap = await step.run("create-folders", async () => {
-      const map: Record<string, Id<"files">> = {};
+      const map: Record<string, string> = {};
 
       for (const folder of folders) {
         if (!folder.path) {
@@ -105,22 +89,20 @@ export const importGithubRepo = inngest.createFunction(
         const parentPath = pathParts.join("/");
         const parentId = parentPath ? map[parentPath] : undefined;
 
-        const folderId = await convex.mutation(api.system.createFolder, {
-          internalKey,
+        const createdFolder = await createFolder({
           projectId,
           name,
           parentId,
         });
 
-        map[folder.path] = folderId;
+        map[folder.path] = createdFolder._id;
       }
 
       return map;
     });
 
-    // Get all files (blobs) from the tree
     const allFiles = tree.tree.filter(
-      (item) => item.type === "blob" && item.path && item.sha
+      (item) => item.type === "blob" && item.path && item.sha,
     );
 
     await step.run("create-files", async () => {
@@ -137,53 +119,39 @@ export const importGithubRepo = inngest.createFunction(
           });
 
           const buffer = Buffer.from(blob.content, "base64");
-          const isBinary = await isBinaryFile(buffer);
-
+          const binary = await isBinaryFile(buffer);
           const pathParts = file.path.split("/");
           const name = pathParts.pop()!;
           const parentPath = pathParts.join("/");
           const parentId = parentPath ? folderIdMap[parentPath] : undefined;
 
-          if (isBinary) {
-            const uploadUrl = await convex.mutation(
-              api.system.generateUploadUrl,
-              { internalKey }
-            );
+          if (binary) {
+            const mimeType = getMimeType(name);
+            const dataUrl = `data:${mimeType};base64,${buffer.toString("base64")}`;
 
-            const { storageId } = await ky
-              .post(uploadUrl, {
-                headers: { "Content-Type": "application/octet-stream" },
-                body: buffer,
-              })
-              .json<{ storageId: Id<"_storage"> }>();
-
-            await convex.mutation(api.system.createBinaryFile, {
-              internalKey,
+            await createBinaryFile({
               projectId,
               name,
-              storageId,
+              dataUrl,
+              mimeType,
               parentId,
             });
           } else {
-            const content = buffer.toString("utf-8");
-
-            await convex.mutation(api.system.createFile, {
-              internalKey,
+            await createFile({
               projectId,
               name,
-              content,
+              content: buffer.toString("utf-8"),
               parentId,
             });
           }
-        } catch {
-          console.error(`Failed to import file: ${file.path}`);
+        } catch (error) {
+          console.error(`Failed to import file: ${file.path}`, error);
         }
       }
     });
 
     await step.run("set-completed-status", async () => {
-      await convex.mutation(api.system.updateImportStatus, {
-        internalKey,
+      await updateProjectImportStatus({
         projectId,
         status: "completed",
         error: undefined,
@@ -191,5 +159,5 @@ export const importGithubRepo = inngest.createFunction(
     });
 
     return { success: true, projectId };
-  }
+  },
 );

@@ -1,76 +1,130 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { SignInButton, useAuth, useClerk } from "@clerk/nextjs";
+import { useEffect, useMemo, useState } from "react";
+import { getProviders, signIn } from "next-auth/react";
 import {
   ArrowRightIcon,
+  GithubIcon,
   Loader2Icon,
-  RefreshCwIcon,
-  ShieldCheckIcon,
-  ShieldXIcon,
+  LockKeyholeIcon,
   SparkleIcon,
   TerminalSquareIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export const UnauthenticatedView = () => {
-  const router = useRouter();
-  const { signOut } = useClerk();
-  const { isLoaded, isSignedIn, getToken } = useAuth();
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [githubEnabled, setGithubEnabled] = useState(false);
 
-  const handleRefreshConvexSession = async () => {
-    setIsRefreshing(true);
-    setTokenError(null);
+  useEffect(() => {
+    let mounted = true;
+
+    void getProviders().then((providers) => {
+      if (!mounted) {
+        return;
+      }
+
+      setGithubEnabled(Boolean(providers?.github));
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const submitLabel = useMemo(() => {
+    if (isSubmitting) {
+      return mode === "signin" ? "Signing in..." : "Creating account...";
+    }
+
+    return mode === "signin" ? "Sign in to Torq-AI" : "Create Torq-AI account";
+  }, [isSubmitting, mode]);
+
+  const handleCredentialsSubmit = async () => {
+    setIsSubmitting(true);
+    setAuthError(null);
 
     try {
-      let token: string | null = null;
-
-      try {
-        token = await getToken({
-          skipCache: true,
+      if (mode === "signup") {
+        const registerResponse = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: name.trim() || undefined,
+            email,
+            password,
+          }),
         });
-      } catch {
-        token = null;
+
+        const registerBody = (await registerResponse.json()) as {
+          error?: string;
+          code?: string;
+        };
+
+        if (!registerResponse.ok) {
+          if (
+            registerResponse.status === 409 ||
+            registerBody.code === "ACCOUNT_EXISTS"
+          ) {
+            setMode("signin");
+            setAuthError(
+              registerBody.error ||
+                "That email already has an account. Sign in instead, or use a different email.",
+            );
+            return;
+          }
+
+          setAuthError(registerBody.error || "Unable to create account");
+          return;
+        }
       }
 
-      if (!token) {
-        token = await getToken({
-          template: "convex",
-          skipCache: true,
-        });
-      }
+      const response = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+        callbackUrl: "/",
+      });
 
-      if (!token) {
-        setTokenError(
-          "Clerk is signed in, but no Convex token is available yet. Since your Clerk session already has the managed Convex claim, sign out, sign back in, and retry. If it still fails, create a JWT template named 'convex' in Clerk Dashboard as a compatibility fallback."
+      if (response?.error) {
+        setAuthError(
+          mode === "signin"
+            ? "Email or password is incorrect."
+            : "Account created, but sign-in failed. Please try again.",
         );
         return;
       }
 
-      router.refresh();
-      window.location.reload();
+      const destination =
+        response?.url && response.url.startsWith("/")
+          ? response.url
+          : "/";
+
+      window.location.assign(destination);
     } catch {
-      setTokenError(
-        "Torq-AI could not fetch a Clerk token that Convex accepts. Sign out and sign back in first. If the problem persists, open Clerk Dashboard -> JWT Templates and create a template named 'convex' as a fallback."
-      );
+      setAuthError("Unable to continue right now. Please try again.");
     } finally {
-      setIsRefreshing(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleSignOut = async () => {
-    await signOut({
-      redirectUrl: "/",
+  const handleGithubSignIn = async () => {
+    setAuthError(null);
+    await signIn("github", {
+      callbackUrl: "/",
     });
   };
-
-  const showConvexMismatchState = isLoaded && isSignedIn;
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
@@ -115,18 +169,11 @@ export const UnauthenticatedView = () => {
                   </p>
                 </div>
                 <div className="rounded-[1.4rem] border border-panel-border bg-panel-elevated p-5">
-                  {showConvexMismatchState ? (
-                    <ShieldXIcon className="size-4 text-vscode-orange" />
-                  ) : (
-                    <ShieldCheckIcon className="size-4 text-vscode-blue" />
-                  )}
-                  <p className="mt-4 text-lg font-semibold">
-                    {showConvexMismatchState ? "Session needs sync" : "Clerk-secured"}
-                  </p>
+                  <LockKeyholeIcon className="size-4 text-vscode-blue" />
+                  <p className="mt-4 text-lg font-semibold">Session-backed access</p>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {showConvexMismatchState
-                      ? "Clerk has a signed-in session, but Convex has not accepted the auth token yet."
-                      : "Authentication is already wired in, so you can focus on building instead of boilerplate."}
+                    Sign in with email and password or connect GitHub to carry
+                    your workspace session cleanly across deploy environments.
                   </p>
                 </div>
               </div>
@@ -138,69 +185,92 @@ export const UnauthenticatedView = () => {
                   Access
                 </p>
                 <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">
-                  {showConvexMismatchState
-                    ? "Clerk is signed in. Convex still needs the token."
-                    : "One sign-in and you’re in."}
+                  {mode === "signin"
+                    ? "Sign in and keep building."
+                    : "Create your Torq-AI account."}
                 </h2>
                 <p className="mt-4 text-sm leading-6 text-muted-foreground">
-                  {showConvexMismatchState
-                    ? "This usually means the Clerk token template named 'convex' is missing or the session needs a clean refresh."
-                    : "Use your account to open the Torq-AI workspace and continue building with the full editor experience."}
+                  Use credentials for a direct workspace login, or jump through
+                  GitHub when you want repo access and account linking in the
+                  same flow.
                 </p>
-                {showConvexMismatchState ? (
-                  <>
+                <div className="mt-8 space-y-4">
+                  <div className="grid gap-3">
+                    {mode === "signup" ? (
+                      <Input
+                        value={name}
+                        onChange={(event) => setName(event.target.value)}
+                        placeholder="Your name"
+                      />
+                    ) : null}
+                    <Input
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      placeholder="you@torq-ai.com"
+                    />
+                    <Input
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="Password"
+                    />
+                  </div>
+                  <Button
+                    className="h-12 w-full rounded-2xl bg-gradient-to-r from-vscode-blue via-cyan-500 to-vscode-purple text-white shadow-[0_20px_50px_rgba(0,122,204,0.35)] hover:brightness-110"
+                    disabled={!email.trim() || !password.trim() || isSubmitting}
+                    onClick={() => void handleCredentialsSubmit()}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2Icon className="size-4 animate-spin" />
+                        {submitLabel}
+                      </>
+                    ) : (
+                      <>
+                        {submitLabel}
+                        <ArrowRightIcon className="size-4" />
+                      </>
+                    )}
+                  </Button>
+                  {githubEnabled ? (
                     <Button
-                      className="mt-8 h-12 w-full rounded-2xl bg-gradient-to-r from-vscode-blue via-cyan-500 to-vscode-purple text-white shadow-[0_20px_50px_rgba(0,122,204,0.35)] hover:brightness-110"
-                      disabled={isRefreshing}
-                      onClick={handleRefreshConvexSession}
-                    >
-                      {isRefreshing ? (
-                        <>
-                          <Loader2Icon className="size-4 animate-spin" />
-                          Refreshing Convex session...
-                        </>
-                      ) : (
-                        <>
-                          Refresh Convex session
-                          <RefreshCwIcon className="size-4" />
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      className="mt-3 h-11 w-full rounded-2xl"
-                      onClick={handleSignOut}
+                      className="h-11 w-full rounded-2xl"
+                      onClick={() => void handleGithubSignIn()}
+                      type="button"
                       variant="outline"
                     >
-                      Sign out and try again
+                      <GithubIcon className="size-4" />
+                      Continue with GitHub
                     </Button>
-                    {tokenError ? (
-                      <div className="mt-4 rounded-2xl border border-vscode-orange/20 bg-vscode-orange/8 p-4 text-sm leading-6 text-muted-foreground">
-                        {tokenError}
-                      </div>
-                    ) : (
-                      <div className="mt-4 rounded-2xl border border-panel-border bg-panel-elevated p-4 text-sm leading-6 text-muted-foreground">
-                        If refresh does not work, sign out and back in once so
-                        Clerk can mint a fresh session token. If it still fails,
-                        add a JWT template named <code>convex</code> in Clerk as
-                        a compatibility fallback.
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <SignInButton
-                    fallbackRedirectUrl="/"
-                    forceRedirectUrl="/"
-                    mode="modal"
-                    signUpFallbackRedirectUrl="/"
-                    signUpForceRedirectUrl="/"
-                    withSignUp
+                  ) : null}
+                  {authError ? (
+                    <div className="rounded-2xl border border-vscode-orange/20 bg-vscode-orange/8 p-4 text-sm leading-6 text-muted-foreground">
+                      {authError}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-panel-border bg-panel-elevated p-4 text-sm leading-6 text-muted-foreground">
+                      {mode === "signin"
+                        ? "Need a new workspace account? Create one here, then keep iterating from the same cockpit."
+                        : "Already have an account? Flip back to sign in and continue right where you left off."}
+                    </div>
+                  )}
+                  <Button
+                    className="w-full rounded-2xl"
+                    onClick={() => {
+                      setAuthError(null);
+                      setMode((current) =>
+                        current === "signin" ? "signup" : "signin",
+                      );
+                    }}
+                    type="button"
+                    variant="ghost"
                   >
-                    <Button className="mt-8 h-12 w-full rounded-2xl bg-gradient-to-r from-vscode-blue via-cyan-500 to-vscode-purple text-white shadow-[0_20px_50px_rgba(0,122,204,0.35)] hover:brightness-110">
-                      Sign in to Torq-AI
-                      <ArrowRightIcon className="size-4" />
-                    </Button>
-                  </SignInButton>
-                )}
+                    {mode === "signin"
+                      ? "Need an account? Create one"
+                      : "Already have an account? Sign in"}
+                  </Button>
+                </div>
               </div>
             </section>
           </div>

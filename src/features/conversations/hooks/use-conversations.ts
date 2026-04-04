@@ -1,23 +1,103 @@
-import { useMutation, useQuery } from "convex/react";
+import ky from "ky";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { api } from "../../../../convex/_generated/api";
-import { Id } from "../../../../convex/_generated/dataModel";
+import type {
+  ConversationRecord,
+  MessageRecord,
+} from "@/lib/data/types";
+
+import { Doc, Id } from "@/lib/data/app-types";
 
 export const useConversation = (id: Id<"conversations"> | null) => {
-  return useQuery(api.conversations.getById, id ? { id } : "skip");
+  const query = useQuery({
+    queryKey: ["conversation", id],
+    queryFn: async () => {
+      if (!id) {
+        return null;
+      }
+
+      const conversation = await ky
+        .get(`/api/conversations/${id}`)
+        .json<ConversationRecord | null>();
+
+      return conversation as Doc<"conversations"> | null;
+    },
+    enabled: Boolean(id),
+  });
+
+  return id ? query.data : undefined;
 };
 
 export const useMessages = (conversationId: Id<"conversations"> | null) => {
-  return useQuery(
-    api.conversations.getMessages,
-    conversationId ? { conversationId } : "skip"
-  );
+  const query = useQuery({
+    queryKey: ["messages", conversationId],
+    queryFn: async () => {
+      if (!conversationId) {
+        return [];
+      }
+
+      const messages = await ky
+        .get(`/api/conversations/${conversationId}/messages`)
+        .json<MessageRecord[]>();
+
+      return messages as Doc<"messages">[];
+    },
+    enabled: Boolean(conversationId),
+  });
+
+  return conversationId ? query.data : undefined;
 };
 
 export const useConversations = (projectId: Id<"projects">) => {
-  return useQuery(api.conversations.getByProject, { projectId });
+  const query = useQuery({
+    queryKey: ["conversations", projectId],
+    queryFn: async () => {
+      const conversations = await ky
+        .get(`/api/projects/${projectId}/conversations`)
+        .json<ConversationRecord[]>();
+
+      return conversations as Doc<"conversations">[];
+    },
+  });
+
+  return query.data;
 };
 
 export const useCreateConversation = () => {
-  return useMutation(api.conversations.create);
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: async ({
+      projectId,
+      title,
+    }: {
+      projectId: Id<"projects">;
+      title: string;
+    }) => {
+      const conversation = await ky
+        .post(`/api/projects/${projectId}/conversations`, {
+          json: { title },
+        })
+        .json<ConversationRecord>();
+
+      return conversation as Doc<"conversations">;
+    },
+    onSuccess: (conversation) => {
+      queryClient.setQueryData(["conversation", conversation._id], conversation);
+      void queryClient.invalidateQueries({
+        queryKey: ["conversations", conversation.projectId],
+      });
+    },
+  });
+
+  return async ({
+    projectId,
+    title,
+  }: {
+    projectId: Id<"projects">;
+    title: string;
+  }) => {
+    const conversation = await mutation.mutateAsync({ projectId, title });
+    return conversation._id;
+  };
 };

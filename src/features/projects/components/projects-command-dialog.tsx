@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 import { useProjects } from "../hooks/use-projects";
-import { Doc } from "../../../../convex/_generated/dataModel";
+import { Doc } from "@/lib/data/app-types";
 import { DeleteProjectButton } from "./delete-project-button";
 
 interface ProjectsCommandDialogProps {

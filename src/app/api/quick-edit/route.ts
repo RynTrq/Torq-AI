@@ -1,16 +1,16 @@
 import { z } from "zod";
 import { generateText, Output } from "ai";
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 
-import { getFirecrawlClient } from "@/lib/firecrawl";
+import { requireUser } from "@/lib/auth";
 import { getHealthySdkModel } from "@/lib/ai/model-server";
+import { getFirecrawlClient } from "@/lib/firecrawl";
 
 const quickEditSchema = z.object({
   editedCode: z
     .string()
     .describe(
-      "The edited version of the selected code based on the instruction"
+      "The edited version of the selected code based on the instruction",
     ),
 });
 
@@ -42,27 +42,21 @@ If the instruction is unclear or cannot be applied, return the original code unc
 
 export async function POST(request: Request) {
   try {
-    const { userId } = await auth();
-    const { selectedCode, fullCode, instruction, modelId } = await request.json();
+    await requireUser();
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 400 }
-      );
-    }
+    const { selectedCode, fullCode, instruction, modelId } = await request.json();
 
     if (!selectedCode) {
       return NextResponse.json(
         { error: "Selected code is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!instruction) {
       return NextResponse.json(
         { error: "Instruction is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -86,7 +80,7 @@ export async function POST(request: Request) {
           } catch {
             return null;
           }
-        })
+        }),
       );
 
       const validResults = scrapedResults.filter(Boolean);
@@ -113,9 +107,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ editedCode: output.editedCode });
   } catch (error) {
     console.error("Edit error:", error);
+
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     return NextResponse.json(
       { error: "Failed to generate edit" },
-      { status: 500 }
+      { status: 500 },
     );
   }
-};
+}

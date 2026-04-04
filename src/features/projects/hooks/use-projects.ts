@@ -1,85 +1,149 @@
-/* eslint-disable react-hooks/purity */
+import ky from "ky";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { useMutation, useQuery } from "convex/react";
+import type { ProjectRecord, ProjectSettings } from "@/lib/data/types";
 
-import { api } from "../../../../convex/_generated/api";
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Doc, Id } from "@/lib/data/app-types";
+
+const projectKeys = {
+  all: ["projects"] as const,
+  partial: (limit: number) => ["projects", "partial", limit] as const,
+  detail: (projectId: string) => ["projects", projectId] as const,
+};
+
+const castProject = (project: ProjectRecord | null): Doc<"projects"> | null =>
+  project as Doc<"projects"> | null;
+
+const castProjects = (projects: ProjectRecord[]): Doc<"projects">[] =>
+  projects as Doc<"projects">[];
 
 export const useProject = (projectId: Id<"projects">) => {
-  return useQuery(api.projects.getById, { id: projectId });
+  const query = useQuery({
+    queryKey: projectKeys.detail(projectId),
+    queryFn: async () => {
+      const project = await ky
+        .get(`/api/projects/${projectId}`)
+        .json<ProjectRecord | null>();
+
+      return castProject(project);
+    },
+  });
+
+  return query.data;
 };
 
 export const useProjects = () => {
-  return useQuery(api.projects.get);
+  const query = useQuery({
+    queryKey: projectKeys.all,
+    queryFn: async () => {
+      const projects = await ky.get("/api/projects").json<ProjectRecord[]>();
+      return castProjects(projects);
+    },
+  });
+
+  return query.data;
 };
 
 export const useProjectsPartial = (limit: number) => {
-  return useQuery(api.projects.getPartial, {
-    limit,
+  const query = useQuery({
+    queryKey: projectKeys.partial(limit),
+    queryFn: async () => {
+      const projects = await ky
+        .get("/api/projects", { searchParams: { limit: String(limit) } })
+        .json<ProjectRecord[]>();
+
+      return castProjects(projects);
+    },
   });
+
+  return query.data;
 };
 
 export const useCreateProject = () => {
-  return useMutation(api.projects.create).withOptimisticUpdate(
-    (localStore, args) => {
-      const existingProjects = localStore.getQuery(api.projects.get);
+  const queryClient = useQueryClient();
 
-      if (existingProjects !== undefined) {
-        const now = Date.now();
-        const newProject = {
-          _id: crypto.randomUUID() as Id<"projects">,
-          _creationTime: now,
-          name: args.name,
-          ownerId: "anonymous",
-          updatedAt: now,
-        };
+  const mutation = useMutation({
+    mutationFn: async ({ name }: { name: string }) => {
+      const project = await ky
+        .post("/api/projects", {
+          json: { name },
+        })
+        .json<ProjectRecord>();
 
-        localStore.setQuery(api.projects.get, {}, [
-          newProject,
-          ...existingProjects,
-        ]);
-      }
-    }
-  )
+      return castProject(project);
+    },
+    onSuccess: (project) => {
+      void queryClient.invalidateQueries({ queryKey: projectKeys.all });
+      void queryClient.invalidateQueries({ queryKey: ["projects", "partial"] });
+      queryClient.setQueryData(projectKeys.detail(project!._id), project);
+    },
+  });
+
+  return mutation.mutateAsync;
 };
 
 export const useRenameProject = () => {
-  return useMutation(api.projects.rename).withOptimisticUpdate(
-    (localStore, args) => {
-      const existingProject = localStore.getQuery(
-        api.projects.getById,
-        { id: args.id }
-      );
+  const queryClient = useQueryClient();
 
-      if (existingProject !== undefined  && existingProject !== null) {
-        localStore.setQuery(
-          api.projects.getById,
-          { id: args.id },
-          {
-            ...existingProject,
-            name: args.name,
-            updatedAt: Date.now(),
-          }
-        );
+  const mutation = useMutation({
+    mutationFn: async ({
+      id,
+      name,
+    }: {
+      id: Id<"projects">;
+      name: string;
+    }) => {
+      const project = await ky
+        .patch(`/api/projects/${id}`, {
+          json: { name },
+        })
+        .json<ProjectRecord>();
+
+      return castProject(project);
+    },
+    onSuccess: (project) => {
+      if (!project) {
+        return;
       }
 
-      const existingProjects = localStore.getQuery(api.projects.get);
+      queryClient.setQueryData(projectKeys.detail(project._id), project);
+      void queryClient.invalidateQueries({ queryKey: projectKeys.all });
+      void queryClient.invalidateQueries({ queryKey: ["projects", "partial"] });
+    },
+  });
 
-      if (existingProjects !== undefined) {
-        localStore.setQuery(
-          api.projects.get,
-          {},
-          existingProjects.map((project) => {
-            return project._id === args.id
-              ? { ...project, name: args.name, updatedAt: Date.now() }
-              : project
-          })
-        );
-      }
-    }
-  )
+  return mutation.mutateAsync;
 };
 
 export const useUpdateProjectSettings = () => {
-  return useMutation(api.projects.updateSettings);
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: async ({
+      id,
+      settings,
+    }: {
+      id: Id<"projects">;
+      settings: ProjectSettings;
+    }) => {
+      const project = await ky
+        .patch(`/api/projects/${id}`, {
+          json: { settings },
+        })
+        .json<ProjectRecord>();
+
+      return castProject(project);
+    },
+    onSuccess: (project) => {
+      if (!project) {
+        return;
+      }
+
+      queryClient.setQueryData(projectKeys.detail(project._id), project);
+      void queryClient.invalidateQueries({ queryKey: projectKeys.all });
+      void queryClient.invalidateQueries({ queryKey: ["projects", "partial"] });
+    },
+  });
+
+  return mutation.mutateAsync;
 };

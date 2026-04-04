@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useForm } from "@tanstack/react-form";
-import { useClerk } from "@clerk/nextjs";
+import { signIn } from "next-auth/react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 
 const formSchema = z.object({
   url: z.url("Please enter a valid URL"),
@@ -33,7 +33,6 @@ export const ImportGithubDialog = ({
   onOpenChange,
 }: ImportGithubDialogProps) => {
   const router = useRouter();
-  const { openUserProfile } = useClerk();
 
   const form = useForm({
     defaultValues: {
@@ -66,7 +65,9 @@ export const ImportGithubDialog = ({
             toast.error("Upgrade to import repositories", {
               action: {
                 label: "Upgrade",
-                onClick: () => openUserProfile(),
+                onClick: () => {
+                  window.open("/pricing", "_blank", "noopener,noreferrer");
+                },
               },
             });
             onOpenChange(false);
@@ -77,7 +78,9 @@ export const ImportGithubDialog = ({
             toast.error("GitHub account not connected", {
               action: {
                 label: "Connect",
-                onClick: () => openUserProfile(),
+                onClick: () => {
+                  void signIn("github");
+                },
               },
             });
             onOpenChange(false);

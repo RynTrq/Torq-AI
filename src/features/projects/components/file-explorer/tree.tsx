@@ -20,7 +20,7 @@ import { LoadingRow } from "./loading-row";
 import { CreateInput } from "./create-input";
 import { RenameInput } from "./rename-input";
 import { TreeItemWrapper } from "./tree-item-wrapper";
-import { Doc, Id } from "../../../../../convex/_generated/dataModel";
+import { Doc, Id } from "@/lib/data/app-types";
 
 export const Tree = ({
   item,

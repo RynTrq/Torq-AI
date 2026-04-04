@@ -1,6 +1,5 @@
 import { inngest } from "@/inngest/client";
-import { convex } from "@/lib/convex-client";
-import { api } from "../../../../convex/_generated/api";
+import { getMessageById, updateMessageContent } from "@/lib/data/server";
 import {
   processMessageEvent,
   type MessageEvent,
@@ -17,29 +16,21 @@ export const processMessage = inngest.createFunction(
     ],
     onFailure: async ({ event, step }) => {
       const { messageId } = event.data.event.data as MessageEvent;
-      const internalKey = process.env.TORQ_AI_CONVEX_INTERNAL_KEY;
 
-      // Update the message with error content
-      if (internalKey) {
-        await step.run("update-message-on-failure", async () => {
-          const existingMessage = await convex.query(api.system.getMessageById, {
-            internalKey,
-            messageId,
-          });
+      await step.run("update-message-on-failure", async () => {
+        const existingMessage = await getMessageById(messageId);
 
-          if (existingMessage?.status !== "processing") {
-            return;
-          }
+        if (existingMessage?.status !== "processing") {
+          return;
+        }
 
-          await convex.mutation(api.system.updateMessageContent, {
-            internalKey,
-            messageId,
-            content:
-              "My apologies, I encountered an error while processing your request. Let me know if you need anything else!",
-          });
+        await updateMessageContent({
+          messageId,
+          content:
+            "My apologies, I encountered an error while processing your request. Let me know if you need anything else!",
         });
-      }
-    }
+      });
+    },
   },
   {
     event: "message/sent",

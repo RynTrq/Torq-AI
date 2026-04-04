@@ -14,7 +14,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 
-import { Doc } from "../../../../convex/_generated/dataModel";
+import { Doc } from "@/lib/data/app-types";
 
 import { useProjectsPartial } from "../hooks/use-projects";
 import { DeleteProjectButton } from "./delete-project-button";

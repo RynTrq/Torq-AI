@@ -1,120 +1,69 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
-import { 
-  Authenticated, 
-  Unauthenticated,
-  ConvexReactClient,
-  AuthLoading, 
-  ConvexProviderWithAuth,
-} from "convex/react";
-import { ClerkProvider, useAuth } from "@clerk/nextjs";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SessionProvider, useSession } from "next-auth/react";
 
-import { UnauthenticatedView } from "@/features/auth/components/unauthenticated-view";
 import { AuthLoadingView } from "@/features/auth/components/auth-loading-view";
-
-import { EnvironmentSetupView } from "./environment-setup-view";
 import { ThemeProvider } from "./theme-provider";
 
-const useConvexClerkAuth = () => {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+const AuthGate = ({ children }: { children: React.ReactNode }) => {
+  const { status } = useSession();
+  const pathname = usePathname();
+  const router = useRouter();
 
-  const fetchAccessToken = useCallback(
-    async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
-      try {
-        const sessionToken = await getToken({
-          skipCache: forceRefreshToken,
-        });
+  useEffect(() => {
+    if (status === "unauthenticated" && pathname !== "/auth") {
+      router.replace("/auth");
+      return;
+    }
 
-        if (sessionToken) {
-          return sessionToken;
-        }
-      } catch {
-        // Fall through to the legacy Convex JWT template lookup below.
-      }
+    if (status === "authenticated" && pathname === "/auth") {
+      router.replace("/");
+    }
+  }, [pathname, router, status]);
 
-      try {
-        return await getToken({
-          template: "convex",
-          skipCache: forceRefreshToken,
-        });
-      } catch {
-        return null;
-      }
-    },
-    [getToken],
-  );
+  if (status === "loading") {
+    return <AuthLoadingView />;
+  }
 
-  return useMemo(
-    () => ({
-      isLoading: !isLoaded,
-      isAuthenticated: isSignedIn ?? false,
-      fetchAccessToken,
-    }),
-    [fetchAccessToken, isLoaded, isSignedIn],
-  );
+  if (pathname === "/auth") {
+    return status === "authenticated" ? <AuthLoadingView /> : <>{children}</>;
+  }
+
+  if (status === "unauthenticated") {
+    return <AuthLoadingView />;
+  }
+
+  return <>{children}</>;
 };
 
 export const Providers = ({ children }: { children: React.ReactNode }) => {
-  const clerkPublishableKey =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim();
-  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-  const convex = useMemo(() => {
-    if (!convexUrl) {
-      return null;
-    }
-
-    return new ConvexReactClient(convexUrl);
-  }, [convexUrl]);
-
-  if (!clerkPublishableKey) {
-    return (
-      <ThemeProvider
-        attribute="class"
-        defaultTheme="dark"
-        enableSystem
-        disableTransitionOnChange
-      >
-        <EnvironmentSetupView missingClerk missingConvex={!convex} />
-      </ThemeProvider>
-    );
-  }
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 10_000,
+            refetchOnWindowFocus: false,
+          },
+        },
+      }),
+  );
 
   return (
-    <ClerkProvider
-      publishableKey={clerkPublishableKey}
-      afterSignOutUrl="/"
-      appearance={{
-        variables: {
-          colorPrimary: "#007acc",
-          borderRadius: "0.95rem",
-        },
-      }}
-      signInFallbackRedirectUrl="/"
-      signUpFallbackRedirectUrl="/"
-    >
-      <ThemeProvider
-        attribute="class"
-        defaultTheme="dark"
-        enableSystem
-        disableTransitionOnChange
-      >
-        {convex ? (
-          <ConvexProviderWithAuth client={convex} useAuth={useConvexClerkAuth}>
-            <Authenticated>
-              {children}
-            </Authenticated>
-            <Unauthenticated>
-              <UnauthenticatedView />
-            </Unauthenticated>
-            <AuthLoading>
-              <AuthLoadingView />
-            </AuthLoading>
-          </ConvexProviderWithAuth>
-        ) : (
-          <EnvironmentSetupView missingClerk={false} missingConvex />
-        )}
-      </ThemeProvider>
-    </ClerkProvider>
+    <SessionProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <AuthGate>{children}</AuthGate>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </SessionProvider>
   );
 };

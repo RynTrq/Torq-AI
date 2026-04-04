@@ -1,6 +1,6 @@
 import { ProjectIdView } from "@/features/projects/components/project-id-view";
 
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 
 const ProjectIdPage = async ({
   params,

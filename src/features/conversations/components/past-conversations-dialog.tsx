@@ -13,7 +13,7 @@ import {
 
 import { useConversations } from "../hooks/use-conversations";
 
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 
 interface PastConversationsDialogProps {
   projectId: Id<"projects">;

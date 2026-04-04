@@ -3,7 +3,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { useFile } from "@/features/projects/hooks/use-files";
 
 import { useEditor } from "../hooks/use-editor";
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 import { FileIcon } from "@react-symbols/icons/utils";

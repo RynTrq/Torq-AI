@@ -1,33 +1,25 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 
-import { convex } from "@/lib/convex-client";
 import { inngest } from "@/inngest/client";
-
-import { api } from "../../../../../../convex/_generated/api";
-import { Id } from "../../../../../../convex/_generated/dataModel";
+import { requireOwnedProject } from "@/lib/data/authz";
+import { updateProjectExportStatus } from "@/lib/data/server";
 
 const requestSchema = z.object({
   projectId: z.string(),
 });
 
 export async function POST(request: Request) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const body = await request.json();
   const { projectId } = requestSchema.parse(body);
 
-  const internalKey = process.env.TORQ_AI_CONVEX_INTERNAL_KEY;
-
-  if (!internalKey) {
+  try {
+    await requireOwnedProject(projectId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unauthorized";
     return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 }
+      { error: message },
+      { status: message === "Unauthorized" ? 401 : 404 },
     );
   }
 
@@ -38,18 +30,16 @@ export async function POST(request: Request) {
     },
   });
 
-  // Update status to cancelled
-  await convex.mutation(api.system.updateExportStatus, {
-    internalKey,
-    projectId: projectId as Id<"projects">,
+  await updateProjectExportStatus({
+    projectId,
     status: "cancelled",
     error: undefined,
     repoUrl: undefined,
   });
 
-  return NextResponse.json({ 
-    success: true, 
-    projectId, 
-    eventId: event.ids[0]
+  return NextResponse.json({
+    success: true,
+    projectId,
+    eventId: event.ids[0],
   });
-};
+}

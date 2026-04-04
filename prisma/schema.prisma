@@ -1,0 +1,177 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FileKind {
+  FILE
+  FOLDER
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+enum MessageStatus {
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+enum ProjectImportStatus {
+  IMPORTING
+  COMPLETED
+  FAILED
+}
+
+enum ProjectExportStatus {
+  EXPORTING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String?
+  email        String?   @unique
+  emailVerified DateTime?
+  image        String?
+  passwordHash String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  accounts     Account[]
+  sessions     Session[]
+  authenticators Authenticator[]
+  projects     Project[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Authenticator {
+  credentialID         String  @unique
+  userId               String
+  providerAccountId    String
+  credentialPublicKey  String
+  counter              Int
+  credentialDeviceType String
+  credentialBackedUp   Boolean
+  transports           String?
+  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, credentialID])
+}
+
+model Project {
+  id            String               @id @default(cuid())
+  name          String
+  ownerId       String
+  updatedAt     DateTime             @default(now())
+  createdAt     DateTime             @default(now())
+  importStatus  ProjectImportStatus?
+  importError   String?
+  exportStatus  ProjectExportStatus?
+  exportRepoUrl String?
+  exportError   String?
+  settings      Json?
+  owner         User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  files         ProjectFile[]
+  conversations Conversation[]
+  messages      Message[]
+
+  @@index([ownerId, updatedAt(sort: Desc)])
+}
+
+model ProjectFile {
+  id         String        @id @default(cuid())
+  projectId  String
+  parentId   String?
+  name       String
+  kind       FileKind
+  content    String?       @db.Text
+  storagePath String?
+  mimeType   String?
+  updatedAt  DateTime      @updatedAt
+  createdAt  DateTime      @default(now())
+  project    Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent     ProjectFile?  @relation("ProjectFileChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children   ProjectFile[] @relation("ProjectFileChildren")
+
+  @@index([projectId])
+  @@index([parentId])
+  @@index([projectId, parentId])
+}
+
+model Conversation {
+  id         String    @id @default(cuid())
+  projectId  String
+  title      String
+  updatedAt  DateTime  @updatedAt
+  createdAt  DateTime  @default(now())
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messages   Message[]
+
+  @@index([projectId, updatedAt(sort: Desc)])
+}
+
+model Message {
+  id             String         @id @default(cuid())
+  conversationId String
+  projectId      String
+  role           MessageRole
+  content        String         @db.Text
+  status         MessageStatus?
+  modelId        String?
+  errorMessage   String?
+  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime       @default(now())
+  conversation   Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([projectId, status])
+}

@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import { UserButton } from "@clerk/nextjs";
 import { FaGithub } from "react-icons/fa";
 import { useEffect, useState } from "react";
 import {
@@ -16,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ModelToggle } from "@/features/ai/components/model-toggle";
+import { UserMenu } from "@/features/auth/components/user-menu";
 
 import { ProjectsList } from "./projects-list";
 import { ProjectsCommandDialog } from "./projects-command-dialog";
@@ -93,7 +93,7 @@ export const ProjectsView = () => {
               <ModelToggle />
               <ThemeToggle />
               <div className="rounded-full border border-panel-border bg-panel-elevated p-1 shadow-[0_12px_32px_rgba(15,23,42,0.14)] backdrop-blur-xl">
-                <UserButton />
+                <UserMenu />
               </div>
             </div>
           </header>

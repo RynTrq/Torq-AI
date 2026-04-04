@@ -4,21 +4,19 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { Doc, Id } from "../../../convex/_generated/dataModel";
+import type { ProjectFileRecord } from "@/lib/data/types";
 
-export type ProjectFileWithUrl = Doc<"files"> & {
-  storageUrl: string | null;
-};
+export type ProjectFileWithUrl = ProjectFileRecord;
 
 export interface MaterializedProjectWorkspace {
   rootDir: string;
   filesByPath: Map<string, ProjectFileWithUrl>;
-  filePathsById: Map<Id<"files">, string>;
+  filePathsById: Map<string, string>;
 }
 
 const getRelativePath = (
   file: ProjectFileWithUrl,
-  filesMap: Map<Id<"files">, ProjectFileWithUrl>,
+  filesMap: Map<string, ProjectFileWithUrl>,
 ) => {
   const parts = [file.name];
   let parentId = file.parentId;
@@ -37,9 +35,9 @@ const getRelativePath = (
 };
 
 export const buildProjectFileMaps = (files: ProjectFileWithUrl[]) => {
-  const filesMap = new Map<Id<"files">, ProjectFileWithUrl>();
+  const filesMap = new Map<string, ProjectFileWithUrl>();
   const filesByPath = new Map<string, ProjectFileWithUrl>();
-  const filePathsById = new Map<Id<"files">, string>();
+  const filePathsById = new Map<string, string>();
 
   files.forEach((file) => filesMap.set(file._id, file));
 
@@ -53,7 +51,7 @@ export const buildProjectFileMaps = (files: ProjectFileWithUrl[]) => {
 };
 
 export const materializeProjectWorkspace = async (
-  projectId: Id<"projects">,
+  projectId: string,
   files: ProjectFileWithUrl[],
 ): Promise<MaterializedProjectWorkspace> => {
   const rootDir = await mkdtemp(join(tmpdir(), `torq-ai-${projectId}-`));

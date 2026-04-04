@@ -23,14 +23,14 @@ import { PreviewTerminal } from "@/features/preview/components/preview-terminal"
 import { Button } from "@/components/ui/button";
 
 import { useProject } from "../hooks/use-projects";
-import { useFile, useFilePath } from "../hooks/use-files";
+import { useFile, useFilePath, useFiles } from "../hooks/use-files";
 import { useEditor } from "@/features/editor/hooks/use-editor";
 import {
   getPreviewKind,
   getRunnableLanguageLabel,
 } from "@/lib/project-files";
 
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 
 const EMPTY_RUN_STATE = {
   status: "idle" as const,
@@ -42,6 +42,7 @@ const EMPTY_RUN_STATE = {
 
 export const PreviewView = ({ projectId }: { projectId: Id<"projects"> }) => {
   const project = useProject(projectId);
+  const files = useFiles(projectId);
   const { activeTabId } = useEditor(projectId);
   const activeFile = useFile(activeTabId);
   const activeFilePath = useFilePath(activeTabId);
@@ -65,11 +66,21 @@ export const PreviewView = ({ projectId }: { projectId: Id<"projects"> }) => {
     ...EMPTY_RUN_STATE,
   });
 
+  const hasPackageJson = useMemo(
+    () => Boolean(files?.some((file) => file.type === "file" && file.name === "package.json")),
+    [files],
+  );
+  const workspacePreviewEnabled = Boolean(
+    project?.settings?.devCommand?.trim() ||
+      project?.settings?.installCommand?.trim() ||
+      hasPackageJson,
+  );
+
   const {
     status, previewUrl, error, restart, terminalOutput
   } = useWebContainer({
     projectId,
-    enabled: true,
+    enabled: workspacePreviewEnabled,
     settings: project?.settings,
   });
 
@@ -202,6 +213,18 @@ export const PreviewView = ({ projectId }: { projectId: Id<"projects"> }) => {
 
   const renderWorkspacePreview = () => (
     <>
+      {!workspacePreviewEnabled && (
+        <div className="size-full flex items-center justify-center text-muted-foreground">
+          <div className="flex flex-col items-center gap-2 max-w-md mx-auto text-center">
+            <GlobeIcon className="size-6" />
+            <p className="text-sm font-medium">Workspace preview is not configured yet</p>
+            <p className="text-sm text-muted-foreground">
+              Add a <code>package.json</code> or set install and start commands in Preview settings to boot a web workspace.
+            </p>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="size-full flex items-center justify-center text-muted-foreground">
           <div className="flex flex-col items-center gap-2 max-w-md mx-auto text-center">
@@ -215,7 +238,7 @@ export const PreviewView = ({ projectId }: { projectId: Id<"projects"> }) => {
         </div>
       )}
 
-      {isLoading && !error && (
+      {workspacePreviewEnabled && isLoading && !error && (
         <div className="size-full flex items-center justify-center text-muted-foreground">
           <div className="flex flex-col items-center gap-2 max-w-md mx-auto text-center">
             <Loader2Icon className="size-6 animate-spin" />
@@ -224,7 +247,7 @@ export const PreviewView = ({ projectId }: { projectId: Id<"projects"> }) => {
         </div>
       )}
 
-      {previewUrl && !error && (
+      {workspacePreviewEnabled && previewUrl && !error && (
         <iframe
           src={previewUrl}
           className="size-full border-0"
@@ -232,7 +255,7 @@ export const PreviewView = ({ projectId }: { projectId: Id<"projects"> }) => {
         />
       )}
 
-      {!previewUrl && !error && !isLoading && (
+      {workspacePreviewEnabled && !previewUrl && !error && !isLoading && (
         <div className="size-full flex items-center justify-center text-muted-foreground">
           <div className="max-w-md text-center">
             <p className="text-sm font-medium">No workspace preview yet</p>
@@ -382,7 +405,7 @@ export const PreviewView = ({ projectId }: { projectId: Id<"projects"> }) => {
           size="sm"
           variant="ghost"
           className="h-full rounded-none"
-          disabled={isLoading}
+          disabled={isLoading || !workspacePreviewEnabled}
           onClick={restart}
           title="Restart container"
         >
@@ -438,14 +461,15 @@ export const PreviewView = ({ projectId }: { projectId: Id<"projects"> }) => {
             ) : null}
           </div>
           <div className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-            {mode === "workspace" && isLoading && (
+            {mode === "workspace" && workspacePreviewEnabled && isLoading && (
             <div className="flex items-center gap-1.5">
               <Loader2Icon className="size-3 animate-spin" />
               {status === "booting" ? "Starting..." : "Installing..."}
             </div>
             )}
-            {mode === "workspace" && previewUrl && <span className="truncate">{previewUrl}</span>}
-            {mode === "workspace" && !isLoading && !previewUrl && !error && <span>Ready to preview</span>}
+            {mode === "workspace" && workspacePreviewEnabled && previewUrl && <span className="truncate">{previewUrl}</span>}
+            {mode === "workspace" && !workspacePreviewEnabled && <span>Add package.json or preview commands</span>}
+            {mode === "workspace" && workspacePreviewEnabled && !isLoading && !previewUrl && !error && <span>Ready to preview</span>}
             {mode === "file" && activeFile && (
               <span className="truncate">
                 Previewing {relativeFilePath ?? activeFile.name}

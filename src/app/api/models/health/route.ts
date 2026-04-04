@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 
+import { requireUser } from "@/lib/auth";
 import { DEFAULT_AI_MODEL_ID } from "@/lib/ai/model-catalog";
-import { getAllAIModelHealth } from "@/lib/ai/model-health-server";
 import { isModelAvailable } from "@/lib/ai/model-health";
+import { getAllAIModelHealth } from "@/lib/ai/model-health-server";
 
 export async function GET() {
-  const { userId } = await auth();
-
-  if (!userId) {
+  try {
+    await requireUser();
+  } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

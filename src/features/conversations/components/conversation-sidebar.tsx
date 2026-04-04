@@ -39,7 +39,7 @@ import {
 } from "../hooks/use-conversations";
 import { useModelStore } from "@/features/ai/store/use-model-store";
 
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 import { DEFAULT_CONVERSATION_TITLE } from "../constants";
 import { PastConversationsDialog } from "./past-conversations-dialog";
 import { AI_MODEL_IDS, AI_MODELS } from "@/lib/ai/model-catalog";

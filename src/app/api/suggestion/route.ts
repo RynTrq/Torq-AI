@@ -1,15 +1,15 @@
 import { generateText, Output } from "ai";
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getHealthySdkModel } from "@/lib/ai/model-server";
+import { requireUser } from "@/lib/auth";
+import { getHealthyCandidateAIModels, getSdkModelByDefinition } from "@/lib/ai/model-server";
 
 const suggestionSchema = z.object({
   suggestion: z
     .string()
     .describe(
-      "The code to insert at cursor, or empty string if no completion needed"
+      "The code to insert at cursor, or empty string if no completion needed",
     ),
 });
 
@@ -45,14 +45,7 @@ Your suggestion is inserted immediately after the cursor, so never suggest code 
 
 export async function POST(request: Request) {
   try {
-    const { userId } = await auth();
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 403 },
-      );
-    }
+    await requireUser();
 
     const {
       fileName,
@@ -69,11 +62,17 @@ export async function POST(request: Request) {
     if (!code) {
       return NextResponse.json(
         { error: "Code is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const { model } = await getHealthySdkModel(modelId);
+    const healthyModels = await getHealthyCandidateAIModels(modelId);
+
+    if (healthyModels.length === 0) {
+      return NextResponse.json({ suggestion: "" });
+    }
+
+    const { model } = getSdkModelByDefinition(healthyModels[0]);
 
     const prompt = SUGGESTION_PROMPT
       .replace("{fileName}", fileName)
@@ -91,9 +90,28 @@ export async function POST(request: Request) {
       prompt,
     });
 
-    return NextResponse.json({ suggestion: output.suggestion })
+    return NextResponse.json({ suggestion: output.suggestion });
   } catch (error) {
     console.error("Suggestion error: ", error);
+
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (
+      error instanceof Error &&
+      (
+        error.message.includes("No AI provider is configured") ||
+        error.message.toLowerCase().includes("quota") ||
+        error.message.toLowerCase().includes("credit") ||
+        error.message.toLowerCase().includes("billing") ||
+        error.message.toLowerCase().includes("api key") ||
+        error.message.toLowerCase().includes("authentication")
+      )
+    ) {
+      return NextResponse.json({ suggestion: "" });
+    }
+
     return NextResponse.json(
       { error: "Failed to generate suggestion" },
       { status: 500 },

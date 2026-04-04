@@ -1,13 +1,10 @@
 import { z } from "zod";
 import { createTool } from "@inngest/agent-kit";
 
-import { convex } from "@/lib/convex-client";
-
-import { api } from "../../../../../convex/_generated/api";
-import { Id } from "../../../../../convex/_generated/dataModel";
+import { getFileById } from "@/lib/data/server";
 
 interface ReadFilesToolOptions {
-  internalKey: string;
+  projectId: string;
 }
 
 const paramsSchema = z.object({
@@ -16,7 +13,7 @@ const paramsSchema = z.object({
     .min(1, "Provide at least one file ID"),
 });
 
-export const createReadFilesTool = ({ internalKey }: ReadFilesToolOptions) => {
+export const createReadFilesTool = ({ projectId }: ReadFilesToolOptions) => {
   return createTool({
     name: "readFiles",
     description: "Read the content of files from the project. Returns file contents.",
@@ -36,18 +33,15 @@ export const createReadFilesTool = ({ internalKey }: ReadFilesToolOptions) => {
           const results: { id: string; name: string; content: string }[] = [];
 
           for (const fileId of fileIds) {
-            const file = await convex.query(api.system.getFileById, {
-              internalKey,
-              fileId: fileId as Id<"files">,
-            });
+            const file = await getFileById(fileId);
 
-            if (file && file.content) {
+            if (file && file.projectId === projectId && file.content) {
               results.push({
                 id: file._id,
                 name: file.name,
                 content: file.content,
               });
-            };
+            }
           }
 
           if (results.length === 0) {
@@ -55,10 +49,10 @@ export const createReadFilesTool = ({ internalKey }: ReadFilesToolOptions) => {
           }
 
           return JSON.stringify(results);
-        })
+        });
       } catch (error) {
         return `Error reading files: ${error instanceof Error ? error.message : "Unknown error"}`;
       }
-    }
+    },
   });
 };

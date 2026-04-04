@@ -1,9 +1,15 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 
 import { inngest } from "@/inngest/client";
-import { convex } from "@/lib/convex-client";
+import { requireOwnedConversation } from "@/lib/data/authz";
+import {
+  createMessage,
+  getMessageById,
+  listProcessingMessages,
+  updateMessageContent,
+  updateMessageStatus,
+} from "@/lib/data/server";
 import {
   getInngestDevCommand,
   isLocalInngestDevServerAvailable,
@@ -14,9 +20,6 @@ import {
   processMessageEvent,
 } from "@/features/conversations/inngest/process-message-core";
 
-import { api } from "../../../../convex/_generated/api";
-import { Id } from "../../../../convex/_generated/dataModel";
-
 const requestSchema = z.object({
   conversationId: z.string(),
   message: z.string(),
@@ -24,89 +27,59 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const internalKey = process.env.TORQ_AI_CONVEX_INTERNAL_KEY;
-
-  if (!internalKey) {
-    return NextResponse.json(
-      { error: "Internal key not configured" },
-      { status: 500 }
-    );
-  }
-
   const body = await request.json();
   const { conversationId, message, modelId } = requestSchema.parse(body);
 
-  // Call convex mutation, query
-  const conversation = await convex.query(api.system.getConversationById, {
-    internalKey,
-    conversationId: conversationId as Id<"conversations">,
-  });
+  let conversation: Awaited<ReturnType<typeof requireOwnedConversation>>["conversation"];
 
-  if (!conversation) {
+  try {
+    ({ conversation } = await requireOwnedConversation(conversationId));
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : "Unauthorized";
+
     return NextResponse.json(
-      { error: "Conversation not found" },
-      { status: 404 }
+      { error: messageText },
+      { status: messageText === "Unauthorized" ? 401 : 404 },
     );
   }
 
   const projectId = conversation.projectId;
-
-  // Find all processing messages in this project
-  const processingMessages = await convex.query(
-    api.system.getProcessingMessages,
-    {
-      internalKey,
-      projectId,
-    }
-  );
+  const processingMessages = await listProcessingMessages(projectId);
 
   if (processingMessages.length > 0) {
-    // Cancel all processing messages
     await Promise.all(
-      processingMessages.map(async (msg) => {
+      processingMessages.map(async (processingMessage) => {
         await inngest.send({
           name: "message/cancel",
           data: {
-            messageId: msg._id,
+            messageId: processingMessage._id,
           },
         });
 
-        await convex.mutation(api.system.updateMessageStatus, {
-          internalKey,
-          messageId: msg._id,
+        await updateMessageStatus({
+          messageId: processingMessage._id,
           status: "cancelled",
         });
-      })
+      }),
     );
   }
 
-  // Create user message
-  await convex.mutation(api.system.createMessage, {
-    internalKey,
-    conversationId: conversationId as Id<"conversations">,
+  await createMessage({
+    conversationId,
     projectId,
     role: "user",
     content: message,
   });
 
-  // Create assistant message placeholder with processing status
-  const assistantMessageId = await convex.mutation(
-    api.system.createMessage,
-    {
-      internalKey,
-      conversationId: conversationId as Id<"conversations">,
-      projectId,
-      role: "assistant",
-      content: "",
-      status: "processing",
-    }
-  );
+  const assistantMessage = await createMessage({
+    conversationId,
+    projectId,
+    role: "assistant",
+    content: "",
+    status: "processing",
+    modelId: modelId ?? undefined,
+  });
+  const assistantMessageId = assistantMessage._id;
 
   if (shouldCheckLocalInngestDevServer()) {
     let warning: string | undefined;
@@ -115,7 +88,7 @@ export async function POST(request: Request) {
       await processMessageEvent({
         eventData: {
           messageId: assistantMessageId,
-          conversationId: conversationId as Id<"conversations">,
+          conversationId,
           projectId,
           message,
           modelId,
@@ -128,14 +101,10 @@ export async function POST(request: Request) {
 
       console.error("Failed to process message inline", error);
 
-      const existingMessage = await convex.query(api.system.getMessageById, {
-        internalKey,
-        messageId: assistantMessageId,
-      });
+      const existingMessage = await getMessageById(assistantMessageId);
 
       if (existingMessage?.status === "processing") {
-        await convex.mutation(api.system.updateMessageContent, {
-          internalKey,
+        await updateMessageContent({
           messageId: assistantMessageId,
           content:
             "I ran into an unexpected error while processing your message. Please retry in a moment.",
@@ -155,10 +124,10 @@ export async function POST(request: Request) {
 
   if (!localWorkerAvailable) {
     const devCommand = getInngestDevCommand();
-    const warning = `Your message was saved, but the local AI worker is offline. Start \`${devCommand}\`, then send the prompt again.`;
+    const warning =
+      `Your message was saved, but the local AI worker is offline. Start \`${devCommand}\`, then send the prompt again.`;
 
-    await convex.mutation(api.system.updateMessageContent, {
-      internalKey,
+    await updateMessageContent({
       messageId: assistantMessageId,
       content:
         `I saved your message, but the local AI worker is not running. Start \`${devCommand}\` in another terminal, then resend your prompt.`,
@@ -196,8 +165,7 @@ export async function POST(request: Request) {
 
     console.error("Failed to enqueue message processing", error);
 
-    await convex.mutation(api.system.updateMessageContent, {
-      internalKey,
+    await updateMessageContent({
       messageId: assistantMessageId,
       content:
         "I saved your message, but the AI processor is unavailable right now. Please try again in a moment.",
@@ -211,4 +179,4 @@ export async function POST(request: Request) {
     queued,
     warning,
   });
-};
+}

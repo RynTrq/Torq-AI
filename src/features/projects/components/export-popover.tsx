@@ -3,7 +3,7 @@ import ky, { HTTPError } from "ky";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useForm } from "@tanstack/react-form";
-import { useClerk } from "@clerk/nextjs";
+import { signIn } from "next-auth/react";
 import { FaGithub } from "react-icons/fa";
 import {
   CheckCheckIcon,
@@ -32,7 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { useProject } from "../hooks/use-projects";
 
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 import Link from "next/link";
 
 const formSchema = z.object({
@@ -55,7 +55,6 @@ interface ExportPopoverProps {
 export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
   const project = useProject(projectId);
   const [open, setOpen] = React.useState(false);
-  const { openUserProfile } = useClerk();
 
   const exportStatus = project?.exportStatus;
   const exportRepoUrl = project?.exportRepoUrl;
@@ -90,7 +89,9 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
             toast.error("Upgrade to export repositories", {
               action: {
                 label: "Upgrade",
-                onClick: () => openUserProfile(),
+                onClick: () => {
+                  window.open("/pricing", "_blank", "noopener,noreferrer");
+                },
               },
             });
             setOpen(false);
@@ -101,7 +102,9 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
             toast.error("GitHub account not connected", {
               action: {
                 label: "Connect",
-                onClick: () => openUserProfile(),
+                onClick: () => {
+                  void signIn("github");
+                },
               },
             });
             setOpen(false);

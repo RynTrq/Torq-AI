@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
-import { auth, clerkClient } from "@clerk/nextjs/server";
 
+import { requireOwnedProject } from "@/lib/data/authz";
+import {
+  getUserGithubAccessToken,
+  updateProjectExportStatus,
+} from "@/lib/data/server";
 import { inngest } from "@/inngest/client";
-import { convex } from "@/lib/convex-client";
-
-import { api } from "../../../../../convex/_generated/api";
-import { Id } from "../../../../../convex/_generated/dataModel";
 
 const requestSchema = z.object({
   projectId: z.string(),
@@ -16,40 +16,37 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const { userId, has } = await auth();
-
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const hasPro = has({ plan: "pro" });
-
-  if (!hasPro) {
-    return NextResponse.json({ error: "Pro plan required" }, { status: 403 });
-  }
-
   const body = await request.json();
   const { projectId, repoName, visibility, description } = requestSchema.parse(body);
 
-  const client = await clerkClient();
-  const tokens = await client.users.getUserOauthAccessToken(userId, "github");
-  const githubToken = tokens.data[0]?.token;
+  let userId: string;
+
+  try {
+    const { user } = await requireOwnedProject(projectId);
+    userId = user.id;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unauthorized";
+    return NextResponse.json(
+      { error: message },
+      { status: message === "Unauthorized" ? 401 : 404 },
+    );
+  }
+
+  const githubToken = await getUserGithubAccessToken(userId);
 
   if (!githubToken) {
     return NextResponse.json(
-      { error: "GitHub not connected. Please reconnect your GitHub account." },
-      { status: 400 }
+      { error: "GitHub not connected. Please connect your GitHub account and try again." },
+      { status: 400 },
     );
   }
 
-  const internalKey = process.env.TORQ_AI_CONVEX_INTERNAL_KEY;
-
-  if (!internalKey) {
-    return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 }
-    );
-  }
+  await updateProjectExportStatus({
+    projectId,
+    status: "exporting",
+    error: undefined,
+    repoUrl: undefined,
+  });
 
   try {
     const event = await inngest.send({
@@ -60,7 +57,6 @@ export async function POST(request: Request) {
         visibility,
         description,
         githubToken,
-        internalKey,
       },
     });
 
@@ -70,9 +66,8 @@ export async function POST(request: Request) {
       eventId: event.ids[0],
     });
   } catch (error) {
-    await convex.mutation(api.system.updateExportStatus, {
-      internalKey,
-      projectId: projectId as Id<"projects">,
+    await updateProjectExportStatus({
+      projectId,
       status: "failed",
       error:
         error instanceof Error
@@ -86,4 +81,4 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-};
+}

@@ -17,7 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 
 interface DeleteProjectButtonProps {
   projectId: Id<"projects">;

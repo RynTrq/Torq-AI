@@ -1,13 +1,10 @@
 import { z } from "zod";
 import { createTool } from "@inngest/agent-kit";
 
-import { convex } from "@/lib/convex-client";
-
-import { api } from "../../../../../convex/_generated/api";
-import { Id } from "../../../../../convex/_generated/dataModel";
+import { deleteFile, getFileById } from "@/lib/data/server";
 
 interface DeleteFilesToolOptions {
-  internalKey: string;
+  projectId: string;
 }
 
 const paramsSchema = z.object({
@@ -17,7 +14,7 @@ const paramsSchema = z.object({
 });
 
 export const createDeleteFilesTool = ({
-  internalKey,
+  projectId,
 }: DeleteFilesToolOptions) => {
   return createTool({
     name: "deleteFiles",
@@ -36,21 +33,21 @@ export const createDeleteFilesTool = ({
 
       const { fileIds } = parsed.data;
 
-      // Validate all files exist before running the step
-      const filesToDelete: { 
-        id: string; 
-        name: string; 
+      const filesToDelete: {
+        id: string;
+        name: string;
         type: string
       }[] = [];
 
       for (const fileId of fileIds) {
-        const file = await convex.query(api.system.getFileById, {
-          internalKey,
-          fileId: fileId as Id<"files">,
-        });
+        const file = await getFileById(fileId);
 
         if (!file) {
           return `Error: File with ID "${fileId}" not found. Use listFiles to get valid file IDs.`;
+        }
+
+        if (file.projectId !== projectId) {
+          return `Error: File with ID "${fileId}" does not belong to this project.`;
         }
 
         filesToDelete.push({
@@ -65,10 +62,7 @@ export const createDeleteFilesTool = ({
           const results: string[] = [];
 
           for (const file of filesToDelete) {
-            await convex.mutation(api.system.deleteFile, {
-              internalKey,
-              fileId: file.id as Id<"files">,
-            });
+            await deleteFile(file.id);
 
             results.push(`Deleted ${file.type} "${file.name}" successfully`);
           }
@@ -78,6 +72,6 @@ export const createDeleteFilesTool = ({
       } catch (error) {
         return `Error deleting files: ${error instanceof Error ? error.message : "Unknown error"}`;
       }
-    }
+    },
   });
 };

@@ -1,9 +1,13 @@
 import { createAgent, createNetwork } from "@inngest/agent-kit";
 import { NonRetriableError } from "inngest";
 
-import { convex } from "@/lib/convex-client";
-import { api } from "../../../../convex/_generated/api";
-import { Doc, Id } from "../../../../convex/_generated/dataModel";
+import type { ConversationRecord, MessageRecord } from "@/lib/data/types";
+import {
+  getConversationById,
+  listRecentMessages,
+  updateConversationTitle,
+  updateMessageContent,
+} from "@/lib/data/server";
 import {
   CODING_AGENT_SYSTEM_PROMPT,
   TITLE_GENERATOR_SYSTEM_PROMPT,
@@ -23,9 +27,9 @@ import {
 } from "@/lib/ai/model-server";
 
 export interface MessageEvent {
-  messageId: Id<"messages">;
-  conversationId: Id<"conversations">;
-  projectId: Id<"projects">;
+  messageId: string;
+  conversationId: string;
+  projectId: string;
   message: string;
   modelId?: string | null;
 }
@@ -71,32 +75,22 @@ export const processMessageEvent = async ({
     modelId,
   } = eventData;
 
-  const internalKey = process.env.TORQ_AI_CONVEX_INTERNAL_KEY;
-
-  if (!internalKey) {
-    throw new NonRetriableError("TORQ_AI_CONVEX_INTERNAL_KEY is not configured");
-  }
-
   await runner.sleep("wait-for-db-sync", "1s");
 
   const conversation = await runner.run("get-conversation", async () => {
-    return await convex.query(api.system.getConversationById, {
-      internalKey,
-      conversationId,
-    });
-  }) as Doc<"conversations"> | null;
+    return await getConversationById(conversationId);
+  }) as ConversationRecord | null;
 
   if (!conversation) {
     throw new NonRetriableError("Conversation not found");
   }
 
   const recentMessages = await runner.run("get-recent-messages", async () => {
-    return await convex.query(api.system.getRecentMessages, {
-      internalKey,
+    return await listRecentMessages({
       conversationId,
       limit: 10,
     });
-  }) as Doc<"messages">[];
+  }) as MessageRecord[];
 
   let systemPrompt = CODING_AGENT_SYSTEM_PROMPT;
 
@@ -163,8 +157,7 @@ export const processMessageEvent = async ({
 
           if (title) {
             await runner.run("update-conversation-title", async () => {
-              await convex.mutation(api.system.updateConversationTitle, {
-                internalKey,
+              await updateConversationTitle({
                 conversationId,
                 title,
               });
@@ -181,13 +174,13 @@ export const processMessageEvent = async ({
         system: systemPrompt,
         model: codingModel.model,
         tools: [
-          createListFilesTool({ internalKey, projectId }),
-          createReadFilesTool({ internalKey }),
-          createUpdateFileTool({ internalKey }),
-          createCreateFilesTool({ projectId, internalKey }),
-          createCreateFolderTool({ projectId, internalKey }),
-          createRenameFileTool({ internalKey }),
-          createDeleteFilesTool({ internalKey }),
+          createListFilesTool({ projectId }),
+          createReadFilesTool({ projectId }),
+          createUpdateFileTool({ projectId }),
+          createCreateFilesTool({ projectId }),
+          createCreateFolderTool({ projectId }),
+          createRenameFileTool({ projectId }),
+          createDeleteFilesTool({ projectId }),
           createScrapeUrlsTool(),
         ],
       });
@@ -235,8 +228,7 @@ export const processMessageEvent = async ({
       }
 
       await runner.run("update-assistant-message", async () => {
-        await convex.mutation(api.system.updateMessageContent, {
-          internalKey,
+        await updateMessageContent({
           messageId,
           content: assistantResponse,
         });
@@ -263,8 +255,7 @@ export const processMessageEvent = async ({
     `Last error: ${sanitizeModelError(lastError)}. Please try another model or retry in a moment.`;
 
   await runner.run("update-assistant-message-error", async () => {
-    await convex.mutation(api.system.updateMessageContent, {
-      internalKey,
+    await updateMessageContent({
       messageId,
       content: failureMessage,
     });

@@ -1,13 +1,10 @@
 import { z } from "zod";
 import { createTool } from "@inngest/agent-kit";
 
-import { convex } from "@/lib/convex-client";
-
-import { api } from "../../../../../convex/_generated/api";
-import { Id } from "../../../../../convex/_generated/dataModel";
+import { getFileById, renameFile } from "@/lib/data/server";
 
 interface RenameFileToolOptions {
-  internalKey: string;
+  projectId: string;
 }
 
 const paramsSchema = z.object({
@@ -16,7 +13,7 @@ const paramsSchema = z.object({
 });
 
 export const createRenameFileTool = ({
-  internalKey,
+  projectId,
 }: RenameFileToolOptions) => {
   return createTool({
     name: "renameFile",
@@ -33,29 +30,28 @@ export const createRenameFileTool = ({
 
       const { fileId, newName } = parsed.data;
 
-      // Validate file exists before running the step
-      const file = await convex.query(api.system.getFileById, {
-        internalKey,
-        fileId: fileId as Id<"files">,
-      });
+      const file = await getFileById(fileId);
 
       if (!file) {
         return `Error: File with ID "${fileId}" not found. Use listFiles to get valid file IDs.`;
       }
 
+      if (file.projectId !== projectId) {
+        return `Error: File with ID "${fileId}" does not belong to this project.`;
+      }
+
       try {
         return await toolStep?.run("rename-file", async () => {
-          await convex.mutation(api.system.renameFile, {
-            internalKey,
-            fileId: fileId as Id<"files">,
+          await renameFile({
+            fileId,
             newName,
           });
 
-          return `Renamed "${file.name}" to "${newName}" successfully`;        
-        })
+          return `Renamed "${file.name}" to "${newName}" successfully`;
+        });
       } catch (error) {
         return `Error renaming file: ${error instanceof Error ? error.message : "Unknown error"}`;
       }
-    }
+    },
   });
 };

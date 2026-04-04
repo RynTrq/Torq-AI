@@ -1,11 +1,11 @@
 import { FileSystemTree } from "@webcontainer/api";
 
-import { Doc, Id } from "../../../../convex/_generated/dataModel";
+import { Doc, Id } from "@/lib/data/app-types";
 
 type FileDoc = Doc<"files">;
 
 /**
- * Convert flat Convex files to nested FileSystemTree for WebContainer
+ * Convert flat project files to a nested FileSystemTree for WebContainer
  */
 export const buildFileTree = (files: FileDoc[]): FileSystemTree => {
   const tree: FileSystemTree = {};

@@ -7,7 +7,7 @@ import { CodeEditor } from "./code-editor";
 import { useEditor } from "../hooks/use-editor";
 import { TopNavigation } from "./top-navigation";
 import { FileBreadcrumbs } from "./file-breadcrumbs";
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 import { AlertTriangleIcon } from "lucide-react";
 
 const DEBOUNCE_MS = 1500;
@@ -45,7 +45,7 @@ export const EditorView = ({ projectId }: { projectId: Id<"projects"> }) => {
                 alt="Torq-AI"
                 width={64}
                 height={76}
-                className="opacity-90"
+                className="h-auto w-auto opacity-90"
                 unoptimized
               />
               <div className="space-y-2">

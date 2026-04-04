@@ -3,17 +3,15 @@ import { basename, join } from "node:path";
 
 import { z } from "zod";
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 
-import { convex } from "@/lib/convex-client";
+import { requireOwnedProject } from "@/lib/data/authz";
+import { listProjectFiles } from "@/lib/data/server";
+import type { ProjectFileRecord, ProjectRecord } from "@/lib/data/types";
 import { getRunnableLanguage } from "@/lib/project-files";
 import {
   cleanupMaterializedWorkspace,
   materializeProjectWorkspace,
 } from "@/lib/server/project-workspace";
-
-import { api } from "../../../../../convex/_generated/api";
-import { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 export const runtime = "nodejs";
 
@@ -48,11 +46,11 @@ const buildRunSpec = ({
   project,
   allFiles,
 }: {
-  file: Doc<"files">;
+  file: ProjectFileRecord;
   relativePath: string;
   rootDir: string;
-  project: Doc<"projects">;
-  allFiles: Doc<"files">[];
+  project: ProjectRecord;
+  allFiles: ProjectFileRecord[];
 }): RunSpec => {
   const customRunCommand = project.settings?.runCommand?.trim();
 
@@ -121,7 +119,7 @@ const buildRunSpec = ({
       const mainClass = packageMatch ? `${packageMatch[1]}.${className}` : className;
       const compileTargets = javaFiles
         .map((id) => allFiles.find((candidate) => candidate._id === id))
-        .filter((candidate): candidate is Doc<"files"> => Boolean(candidate))
+        .filter((candidate): candidate is ProjectFileRecord => Boolean(candidate))
         .map((candidate) => candidate._id);
 
       const fileArguments = compileTargets
@@ -130,6 +128,7 @@ const buildRunSpec = ({
           if (relative) {
             return shellQuote(relative);
           }
+
           const sibling = allFiles.find((candidate) => candidate._id === id);
           if (!sibling) {
             return null;
@@ -209,38 +208,24 @@ const runProcess = (spec: RunSpec) => {
 };
 
 export async function POST(request: Request) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const internalKey = process.env.TORQ_AI_CONVEX_INTERNAL_KEY;
-  if (!internalKey) {
-    return NextResponse.json(
-      { error: "Internal key not configured" },
-      { status: 500 },
-    );
-  }
-
   const body = await request.json();
   const { projectId, fileId } = requestSchema.parse(body);
 
-  const project = await convex.query(api.system.getProjectById, {
-    internalKey,
-    projectId: projectId as Id<"projects">,
-  });
+  let project: Awaited<ReturnType<typeof requireOwnedProject>>["project"];
 
-  if (!project || project.ownerId !== userId) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  try {
+    ({ project } = await requireOwnedProject(projectId));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unauthorized";
+    return NextResponse.json(
+      { error: message },
+      { status: message === "Unauthorized" ? 401 : 404 },
+    );
   }
 
-  const files = await convex.query(api.system.getProjectFilesWithUrls, {
-    internalKey,
-    projectId: projectId as Id<"projects">,
-  });
-
+  const files = await listProjectFiles(projectId);
   const file = files.find((candidate) => candidate._id === fileId);
+
   if (!file || file.type !== "file") {
     return NextResponse.json({ error: "File not found" }, { status: 404 });
   }
@@ -254,7 +239,7 @@ export async function POST(request: Request) {
 
   try {
     const { rootDir, filePathsById } = await materializeProjectWorkspace(
-      projectId as Id<"projects">,
+      projectId,
       files,
     );
 
@@ -268,7 +253,19 @@ export async function POST(request: Request) {
         file,
         relativePath,
         rootDir,
-        project,
+        project: {
+          _id: project.id,
+          _creationTime: project.createdAt.getTime(),
+          name: project.name,
+          ownerId: project.ownerId,
+          updatedAt: project.updatedAt.getTime(),
+          importStatus: project.importStatus?.toLowerCase() as ProjectRecord["importStatus"],
+          importError: project.importError ?? undefined,
+          exportStatus: project.exportStatus?.toLowerCase() as ProjectRecord["exportStatus"],
+          exportRepoUrl: project.exportRepoUrl ?? undefined,
+          exportError: project.exportError ?? undefined,
+          settings: (project.settings as ProjectRecord["settings"]) ?? undefined,
+        },
         allFiles: files,
       });
 

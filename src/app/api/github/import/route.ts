@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
-import { auth, clerkClient } from "@clerk/nextjs/server";
 
-import { convex } from "@/lib/convex-client";
+import { requireUser } from "@/lib/auth";
+import {
+  createProject,
+  getUserGithubAccessToken,
+  updateProjectImportStatus,
+} from "@/lib/data/server";
 import { inngest } from "@/inngest/client";
-
-import { api } from "../../../../../convex/_generated/api";
 
 const requestSchema = z.object({
   url: z.url(),
@@ -32,52 +34,35 @@ function parseGitHubUrl(url: string) {
 }
 
 export async function POST(request: Request) {
-  const { userId, has } = await auth();
+  let userId: string;
 
-  if (!userId) {
+  try {
+    const user = await requireUser();
+    userId = user.id;
+  } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const hasPro = has({ plan: "pro" });
-
-  if (!hasPro) {
-    return NextResponse.json({ error: "Pro plan required" }, { status: 403 });
   }
 
   const body = await request.json();
   const { url } = requestSchema.parse(body);
 
   const { owner, repo } = parseGitHubUrl(url);
-  // https://github.com/AntonioErdeljac/cursor-dev
-  // { owner: "AntonioErdeljac", repo: "cursor-dev" }
-
-  const client = await clerkClient();
-  const tokens = await client.users.getUserOauthAccessToken(
-    userId,
-    "github"
-  );
-  const githubToken = tokens.data[0]?.token;
+  const githubToken = await getUserGithubAccessToken(userId);
 
   if (!githubToken) {
     return NextResponse.json(
-      { error: "GitHub not connected. Please reconnect your GitHub account." },
-      { status: 400 }
+      { error: "GitHub not connected. Please connect your GitHub account and try again." },
+      { status: 400 },
     );
   }
 
-  const internalKey = process.env.TORQ_AI_CONVEX_INTERNAL_KEY;
+  const project = await createProject(userId, repo);
+  const projectId = project._id;
 
-  if (!internalKey) {
-    return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 }
-    );
-  }
-
-  const projectId = await convex.mutation(api.system.createProject, {
-    internalKey,
-    name: repo,
-    ownerId: userId,
+  await updateProjectImportStatus({
+    projectId,
+    status: "importing",
+    error: undefined,
   });
 
   try {
@@ -97,8 +82,7 @@ export async function POST(request: Request) {
       eventId: event.ids[0],
     });
   } catch (error) {
-    await convex.mutation(api.system.updateImportStatus, {
-      internalKey,
+    await updateProjectImportStatus({
       projectId,
       status: "failed",
       error:
@@ -112,4 +96,4 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-};
+}

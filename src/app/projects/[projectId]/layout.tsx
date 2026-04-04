@@ -1,6 +1,6 @@
 import { ProjectIdLayout } from "@/features/projects/components/project-id-layout";
 
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 
 const Layout = async ({
   children,

@@ -1,19 +1,14 @@
 import { z } from "zod";
 import { createTool } from "@inngest/agent-kit";
 
-import { convex } from "@/lib/convex-client";
-
-import { api } from "../../../../../convex/_generated/api";
-import { Id } from "../../../../../convex/_generated/dataModel";
+import { listProjectFiles } from "@/lib/data/server";
 
 interface ListFilesToolOptions {
-  projectId: Id<"projects">;
-  internalKey: string;
+  projectId: string;
 }
 
 export const createListFilesTool = ({
   projectId,
-  internalKey,
 }: ListFilesToolOptions) => {
   return createTool({
     name: "listFiles",
@@ -23,12 +18,8 @@ export const createListFilesTool = ({
     handler: async (_, { step: toolStep }) => {
       try {
         return await toolStep?.run("list-files", async () => {
-          const files = await convex.query(api.system.getProjectFiles, {
-            internalKey,
-            projectId,
-          });
+          const files = await listProjectFiles(projectId);
 
-          // Sort: folders first, then files, alphabetically
           const sorted = files.sort((a, b) => {
             if (a.type !== b.type) {
               return a.type === "folder" ? -1 : 1;
@@ -44,10 +35,10 @@ export const createListFilesTool = ({
           }));
 
           return JSON.stringify(fileList);
-        })
+        });
       } catch (error) {
         return `Error listing files: ${error instanceof Error ? error.message : "Unknown error"}`;
       }
-    }
+    },
   });
 };

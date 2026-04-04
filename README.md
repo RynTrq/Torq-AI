@@ -1,310 +1,172 @@
 # Torq-AI
 
-Torq-AI is a fully featured **cloud-based AI coding workspace** built with modern web technologies.
+Torq-AI is an AI-native browser workspace for building, editing, previewing, and exporting software projects from one place.
 
-Torq-AI is a browser-based development environment inspired by modern AI-native code editors, featuring real-time collaboration, AI-assisted editing, and full-stack project management.
+## Stack
 
----
+- Next.js 16 + React 19
+- Prisma + PostgreSQL
+- Auth.js
+- Inngest
+- AI SDK with Anthropic, Gemini, and OpenAI routing
+- WebContainer + host-side runners for file execution
 
-## ✨ Features
+## Features
 
-### 🧠 AI Capabilities
+- Chat-driven project creation
+- File explorer with create, rename, delete, and custom file templates
+- AI-assisted file generation and code edits
+- Preview for web and text-friendly assets
+- Local execution for JavaScript, Python, C, C++, and Java
+- GitHub import/export
+- Light/dark mode and VS Code-inspired workspace styling
 
-* Real-time code suggestions with ghost text
-* Quick Edit (Cmd + K style natural language editing)
-* Conversation-based AI assistant
-* Context-aware code improvements
+## Environment
 
-### 💻 Code Editor
-
-* Multi-language syntax highlighting (JS, TS, CSS, HTML, JSON, Markdown, Python)
-* Line numbers & code folding
-* Minimap overview
-* Bracket matching & indentation guides
-* Multi-cursor editing
-* Tab-based file navigation
-
-### 📁 File Management
-
-* File explorer with folder hierarchy
-* Create, rename, delete files and folders
-* VSCode-style file icons
-* Auto-save with debouncing
-
-### ⚡ Real-Time Architecture
-
-* Instant updates powered by Convex
-* Optimistic UI updates
-* Background job processing via Inngest
-* Local and hosted file execution for multiple languages
-
----
-
-# 🏗 Tech Stack
-
-| Category                | Technologies                                           |
-| ----------------------- | ------------------------------------------------------ |
-| **Frontend**            | Next.js 16, React 19, TypeScript, Tailwind CSS 4       |
-| **Editor**              | CodeMirror 6, Custom Extensions                        |
-| **Backend**             | Convex (Real-time Database), Inngest (Background Jobs) |
-| **AI**                  | Claude, Gemini, and OpenAI model routing               |
-| **Auth**                | Clerk (with GitHub OAuth)                              |
-| **UI**                  | shadcn/ui, Radix UI                                    |
-| **Execution**           | WebContainer API, xterm.js, host-side runners          |
-
----
-
-# 📂 Project Structure
-
-```
-src/
-├── app/
-│   ├── api/
-│   │   ├── messages/
-│   │   ├── suggestion/
-│   │   └── quick-edit/
-│   └── projects/
-├── components/
-│   ├── ui/
-│   └── ai-elements/
-├── features/
-│   ├── auth/
-│   ├── conversations/
-│   ├── editor/
-│   ├── preview/
-│   └── projects/
-├── inngest/
-└── lib/
-
-convex/
-├── schema.ts
-├── projects.ts
-├── files.ts
-├── conversations.ts
-└── system.ts
-```
-
----
-
-# 🛠 Getting Started
-
-## Prerequisites
-
-* Node.js 20+
-* npm or pnpm
-* Accounts required:
-
-  * Clerk (Authentication)
-  * Convex (Database)
-  * Inngest (Background jobs)
-  * Anthropic or Google AI Studio (AI API)
-
----
-
-## Installation
-
-### 1️⃣ Clone Repository
-
-```bash
-git clone https://github.com/YOUR_USERNAME/AI-Coding-Agent.git
-cd AI-Coding-Agent
-```
-
----
-
-### 2️⃣ Install Dependencies
-
-```bash
-npm install
-```
-
----
-
-### 3️⃣ Setup Environment Variables
-
-```bash
-cp .env.example .env.local
-```
-
-Add:
+Copy `.env.example` to `.env.local` and fill in:
 
 ```env
-# Clerk
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
-CLERK_SECRET_KEY=
-CLERK_FRONTEND_API_URL=
-CLERK_JWT_ISSUER_DOMAIN=
+# Postgres / Prisma
+DATABASE_URL=
+DIRECT_URL=
 
-# Convex
-NEXT_PUBLIC_CONVEX_URL=
-CONVEX_DEPLOYMENT=
-TORQ_AI_CONVEX_INTERNAL_KEY=
+# Auth.js
+AUTH_SECRET=
+NEXTAUTH_URL=http://localhost:3000
+GITHUB_ID=
+GITHUB_SECRET=
 
-# AI Providers
-ANTHROPIC_API_KEY=
-GOOGLE_GENERATIVE_AI_API_KEY=
-GEMINI_API_KEY=
-OPENAI_API_KEY=
-```
-
-Torq-AI accepts either `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY`
-for Gemini.
-
----
-
-### 4️⃣ Start Development Servers
-
-```bash
-npm run dev
-```
-
----
-
-### 5️⃣ Open in Browser
-
-```
-http://localhost:3000
-```
-
----
-
-# 📜 Scripts
-
-```bash
-npm run dev       # Development server
-npm run build     # Production build
-npm run start     # Start production
-npm run lint      # ESLint
-npm run convex:deploy # Deploy Convex functions to production
-```
-
----
-
-# 🚂 Deploy To Railway
-
-Torq-AI is configured for Railway with a Docker-based production image so the
-live app can still run files in:
-
-* JavaScript
-* Python
-* C
-* C++
-* Java
-
-The app now builds with Next.js standalone output and includes a health endpoint:
-
-```text
-/api/health
-```
-
-## 1️⃣ Prepare production services first
-
-### Convex
-
-Deploy your backend to Convex production:
-
-```bash
-npm run convex:deploy
-```
-
-Then copy your production Convex URL into Railway as:
-
-```env
-NEXT_PUBLIC_CONVEX_URL=
-```
-
-### Clerk
-
-Create a Clerk production instance and switch to live keys:
-
-```env
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...
-CLERK_SECRET_KEY=sk_live_...
-CLERK_JWT_ISSUER_DOMAIN=https://your-production-clerk-domain
-```
-
-Important:
-
-* Clerk production requires a real domain you control.
-* Reconfigure GitHub OAuth in Clerk production.
-* Re-enable the Convex integration in the Clerk production instance.
-
-### Inngest
-
-Create or configure your production Inngest app and set the serve URL to:
-
-```text
-https://your-railway-domain/api/inngest
-```
-
-Add these to Railway:
-
-```env
-INNGEST_EVENT_KEY=
-INNGEST_SIGNING_KEY=
-```
-
-## 2️⃣ Set Railway environment variables
-
-Required on Railway:
-
-```env
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
-CLERK_SECRET_KEY=
-CLERK_JWT_ISSUER_DOMAIN=
-NEXT_PUBLIC_CONVEX_URL=
-TORQ_AI_CONVEX_INTERNAL_KEY=
-INNGEST_EVENT_KEY=
-INNGEST_SIGNING_KEY=
-```
-
-AI and optional integrations:
-
-```env
+# AI providers
 ANTHROPIC_API_KEY=
 GOOGLE_GENERATIVE_AI_API_KEY=
 GEMINI_API_KEY=
 OPENAI_API_KEY=
 FIRECRAWL_API_KEY=
-SENTRY_DSN=
-SENTRY_AUTH_TOKEN=
-SENTRY_ORG=
-SENTRY_PROJECT=
+
+# Background jobs
+INNGEST_EVENT_KEY=
+INNGEST_SIGNING_KEY=
 ```
 
-## 3️⃣ Mirror critical env vars into Convex production
+Torq-AI accepts either `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY` for Gemini.
 
-In your Convex production deployment, set:
+## Local Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Generate Prisma client:
+
+```bash
+npm run prisma:generate
+```
+
+Run migrations against your local/dev database:
+
+```bash
+npm run prisma:migrate
+```
+
+Start the app and local Inngest dev server together:
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+## Scripts
+
+```bash
+npm run dev
+npm run dev:web
+npm run inngest:dev
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:deploy
+npm run build
+npm run start
+npm run lint
+```
+
+## Render Deployment
+
+Torq-AI ships with:
+
+- [render.yaml](/Users/raiyaan/Desktop/Padhai%20Likhai/Torq-AI/render.yaml)
+- [Dockerfile](/Users/raiyaan/Desktop/Padhai%20Likhai/Torq-AI/Dockerfile)
+
+The Docker image includes Python, GCC, G++, and Java so language runners still work in production.
+
+### 1. Provision services
+
+- PostgreSQL database
+- GitHub OAuth app
+- Inngest app
+- AI provider keys
+
+### 2. Set Render environment variables
 
 ```env
-CLERK_JWT_ISSUER_DOMAIN=
-TORQ_AI_CONVEX_INTERNAL_KEY=
+DATABASE_URL=
+DIRECT_URL=
+AUTH_SECRET=
+NEXTAUTH_URL=https://your-service.onrender.com
+GITHUB_ID=
+GITHUB_SECRET=
+INNGEST_EVENT_KEY=
+INNGEST_SIGNING_KEY=
+ANTHROPIC_API_KEY=
+GOOGLE_GENERATIVE_AI_API_KEY=
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+FIRECRAWL_API_KEY=
 ```
 
-## 4️⃣ Deploy on Railway
+### 3. GitHub OAuth callback
 
-1. Push this repo to GitHub.
-2. In Railway, create a new project.
-3. Choose **Deploy from GitHub repo**.
-4. Railway will detect the `Dockerfile` and build the app automatically.
-5. Add all required environment variables.
-6. Generate a Railway domain or attach your custom domain.
-7. Confirm health at:
+Set your GitHub OAuth app callback URL to:
 
 ```text
-https://your-domain/api/health
+https://your-service.onrender.com/api/auth/callback/github
 ```
 
-## 5️⃣ Post-deploy checklist
+### 4. Inngest production endpoint
 
-After the app is live:
+Point Inngest at:
 
-1. Open the site and verify Clerk sign-in.
-2. Create a project.
-3. Send a chat prompt.
-4. Import a GitHub repository.
-5. Export a project to GitHub.
-6. Create and run a `.py`, `.js`, `.c`, `.cpp`, or `.java` file.
-7. Preview an `.html` or `.md` file.
+```text
+https://your-service.onrender.com/api/inngest
+```
 
----
+### 5. Deploy
+
+Render can deploy the repo directly with Docker. The container startup runs:
+
+- Prisma migrations
+- the Next.js standalone server
+
+Health check:
+
+```text
+/api/health
+```
+
+## Database
+
+The Prisma schema lives in:
+
+- [schema.prisma](/Users/raiyaan/Desktop/Padhai%20Likhai/Torq-AI/prisma/schema.prisma)
+
+The initial migration lives in:
+
+- [migration.sql](/Users/raiyaan/Desktop/Padhai%20Likhai/Torq-AI/prisma/migrations/20260404013000_initial/migration.sql)
+
+## Notes
+
+- The app now uses Auth.js + Prisma/Postgres for authentication and data.
+- GitHub connection is handled through Auth.js account linking.
+- Gemini is the safest default fallback when other model providers are quota-limited.

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 import { useProject } from "../../hooks/use-projects"
-import { Id } from "../../../../../convex/_generated/dataModel"
+import { Id } from "@/lib/data/app-types";
 import { 
   useCreateFile,
   useCreateFolder,

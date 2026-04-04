@@ -1,14 +1,10 @@
 import { z } from "zod";
 import { createTool } from "@inngest/agent-kit";
 
-import { convex } from "@/lib/convex-client";
-
-import { api } from "../../../../../convex/_generated/api";
-import { Id } from "../../../../../convex/_generated/dataModel";
+import { createFolder, getFileById } from "@/lib/data/server";
 
 interface CreateFolderToolOptions {
-  projectId: Id<"projects">;
-  internalKey: string;
+  projectId: string;
 }
 
 const paramsSchema = z.object({
@@ -18,7 +14,6 @@ const paramsSchema = z.object({
 
 export const createCreateFolderTool = ({
   projectId,
-  internalKey,
 }: CreateFolderToolOptions) => {
   return createTool({
     name: "createFolder",
@@ -41,36 +36,33 @@ export const createCreateFolderTool = ({
 
       try {
         return await toolStep?.run("create-folder", async () => {
-          // Validate parentId if provided
           if (parentId) {
-            try {
-              const parentFolder = await convex.query(api.system.getFileById, {
-                internalKey,
-                fileId: parentId as Id<"files">,
-              });
-              if (!parentFolder) {
-                return `Error: Parent folder with ID "${parentId}" not found. Use listFiles to get valid folder IDs.`;
-              }
-              if (parentFolder.type !== "folder") {
-                return `Error: The ID "${parentId}" is a file, not a folder. Use a folder ID as parentId.`;
-              }
-            } catch {
+            const parentFolder = await getFileById(parentId);
+            if (!parentFolder) {
+              return `Error: Parent folder with ID "${parentId}" not found. Use listFiles to get valid folder IDs.`;
+            }
+            if (parentFolder.projectId !== projectId) {
+              return `Error: Parent folder "${parentId}" does not belong to this project.`;
+            }
+            if (parentFolder.type !== "folder") {
+              return `Error: The ID "${parentId}" is a file, not a folder. Use a folder ID as parentId.`;
+            }
+            if (!parentFolder) {
               return `Error: Invalid parentId "${parentId}". Use listFiles to get valid folder IDs, or use empty string for root level.`;
             }
           }
 
-          const folderId = await convex.mutation(api.system.createFolder, {
-            internalKey,
+          const folder = await createFolder({
             projectId,
             name,
-            parentId: parentId ? (parentId as Id<"files">) : undefined,
+            parentId: parentId || undefined,
           });
 
-          return `Folder created with ID: ${folderId}`;
+          return `Folder "${folder.name}" created with ID: ${folder._id}`;
         });
       } catch (error) {
         return `Error creating folder: ${error instanceof Error ? error.message : "Unknown error"}`;
       }
-    }
+    },
   });
 };

@@ -7,7 +7,7 @@ import {
 } from "@/features/preview/utils/file-tree";
 import { useFiles } from "@/features/projects/hooks/use-files";
 
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 
 // Singleton WebContainer instance
 let webcontainerInstance: WebContainer | null = null;
@@ -60,7 +60,7 @@ export const useWebContainer = ({
   const containerRef = useRef<WebContainer | null>(null);
   const hasStartedRef = useRef(false);
 
-  // Fetch files from Convex (auto-updates on changes)
+  // Fetch files from the app data layer and rebuild the preview container on changes
   const files = useFiles(projectId);
 
   // Initial boot and mount
@@ -87,35 +87,44 @@ export const useWebContainer = ({
         const fileTree = buildFileTree(files);
         await container.mount(fileTree);
 
+        const hasPackageJson = files.some(
+          (file) => file.type === "file" && file.name === "package.json",
+        );
+        const installCmd = settings?.installCommand?.trim() || (hasPackageJson ? "npm install" : null);
+        const devCmd = settings?.devCommand?.trim() || (hasPackageJson ? "npm run dev" : null);
+
         container.on("server-ready", (_port, url) => {
           setPreviewUrl(url);
           setStatus("running");
         });
 
-        setStatus("installing");
-
-        // Parse install command (default: npm install)
-        const installCmd = settings?.installCommand || "npm install";
-        const [installBin, ...installArgs] = installCmd.split(" ");
-        appendOutput(`$ ${installCmd}\n`)
-        const installProcess = await container.spawn(installBin, installArgs);
-        installProcess.output.pipeTo(
-          new WritableStream({
-            write(data) {
-              appendOutput(data);
-            },
-          })
-        );
-        const installExitCode = await installProcess.exit;
-
-        if (installExitCode !== 0) {
-          throw new Error(
-            `${installCmd} failed with code ${installExitCode}`
-          );
+        if (!devCmd) {
+          setStatus("idle");
+          return;
         }
 
-        // Parse dev command (default: npm run dev)
-        const devCmd = settings?.devCommand || "npm run dev";
+        if (installCmd) {
+          setStatus("installing");
+
+          const [installBin, ...installArgs] = installCmd.split(" ");
+          appendOutput(`$ ${installCmd}\n`);
+          const installProcess = await container.spawn(installBin, installArgs);
+          installProcess.output.pipeTo(
+            new WritableStream({
+              write(data) {
+                appendOutput(data);
+              },
+            }),
+          );
+          const installExitCode = await installProcess.exit;
+
+          if (installExitCode !== 0) {
+            throw new Error(`${installCmd} failed with code ${installExitCode}`);
+          }
+        } else {
+          appendOutput("$ No install step configured\n");
+        }
+
         const [devBin, ...devArgs] = devCmd.split(" ");
         appendOutput(`\n$ ${devCmd}\n`);
         const devProcess = await container.spawn(devBin, devArgs);
@@ -165,6 +174,7 @@ export const useWebContainer = ({
       setStatus("idle");
       setPreviewUrl(null);
       setError(null);
+      setTerminalOutput("");
     }
   }, [enabled]);
 
@@ -176,6 +186,7 @@ export const useWebContainer = ({
     setStatus("idle");
     setPreviewUrl(null);
     setError(null);
+    setTerminalOutput("");
     setRestartKey((k) => k + 1);
   }, []);
 

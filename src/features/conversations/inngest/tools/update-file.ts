@@ -1,13 +1,10 @@
 import { z } from "zod";
 import { createTool } from "@inngest/agent-kit";
 
-import { convex } from "@/lib/convex-client";
-
-import { api } from "../../../../../convex/_generated/api";
-import { Id } from "../../../../../convex/_generated/dataModel";
+import { getFileById, updateFileContent } from "@/lib/data/server";
 
 interface UpdateFileToolOptions {
-  internalKey: string;
+  projectId: string;
 }
 
 const paramsSchema = z.object({
@@ -16,7 +13,7 @@ const paramsSchema = z.object({
 });
 
 export const createUpdateFileTool = ({
-  internalKey,
+  projectId,
 }: UpdateFileToolOptions) => {
   return createTool({
     name: "updateFile",
@@ -33,15 +30,14 @@ export const createUpdateFileTool = ({
 
       const { fileId, content } = parsed.data;
 
-      // Validate file exists before running the step
-      const file = await convex.query(api.system.getFileById, {
-        internalKey,
-        fileId: fileId as Id<"files">,
-      });
-
+      const file = await getFileById(fileId);
 
       if (!file) {
         return `Error: File with ID "${fileId}" not found. Use listFiles to get valid file IDs.`;
+      }
+
+      if (file.projectId !== projectId) {
+        return `Error: File with ID "${fileId}" does not belong to this project.`;
       }
 
       if (file.type === "folder") {
@@ -50,17 +46,16 @@ export const createUpdateFileTool = ({
 
       try {
         return await toolStep?.run("update-file", async () => {
-          await convex.mutation(api.system.updateFile, {
-            internalKey,
-            fileId: fileId as Id<"files">,
+          await updateFileContent({
+            fileId,
             content,
           });
 
           return `File "${file.name}" updated successfully`;
-        })
+        });
       } catch (error) {
         return `Error update file: ${error instanceof Error ? error.message : "Unknown error"}`;
       }
-    }
+    },
   });
 };

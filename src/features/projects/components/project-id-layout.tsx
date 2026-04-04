@@ -7,7 +7,7 @@ import { Allotment } from "allotment";
 import { ConversationSidebar } from "@/features/conversations/components/conversation-sidebar";
 
 import { Navbar } from "./navbar";
-import { Id } from "../../../../convex/_generated/dataModel";
+import { Id } from "@/lib/data/app-types";
 import { useProject } from "../hooks/use-projects";
 
 const MIN_SIDEBAR_WIDTH = 200;

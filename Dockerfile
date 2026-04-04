@@ -2,6 +2,7 @@ FROM node:20-bookworm-slim AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY prisma ./prisma
 RUN npm ci
 
 FROM node:20-bookworm-slim AS builder
@@ -11,6 +12,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+RUN npm run prisma:generate
 RUN npm run build
 
 FROM node:20-bookworm-slim AS runner
@@ -36,6 +38,8 @@ RUN groupadd --system --gid 1001 nodejs \
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/prisma ./prisma
 
 RUN mkdir -p /tmp/torq-ai-runs && chown -R nextjs:nodejs /app /tmp/torq-ai-runs
 
@@ -43,5 +47,4 @@ USER nextjs
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
-
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node server.js"]

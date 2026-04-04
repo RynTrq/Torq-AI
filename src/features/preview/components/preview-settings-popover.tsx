@@ -16,7 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
 
-import { Doc, Id } from "../../../../convex/_generated/dataModel";
+import { Doc, Id } from "@/lib/data/app-types";
 
 const formSchema = z.object({
   installCommand: z.string(),
