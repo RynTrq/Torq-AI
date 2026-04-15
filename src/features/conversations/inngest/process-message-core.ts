@@ -45,9 +45,15 @@ export const immediateMessageProcessingRunner: MessageProcessingRunner = {
 };
 
 const MESSAGE_RUN_TIMEOUT_MS = 45_000;
+const MAX_REQUESTED_MODEL_ATTEMPTS = 3;
+const MAX_AUTOMATIC_MODEL_ATTEMPTS = 4;
 const SIMPLE_CHAT_MAX_LENGTH = 80;
 const SIMPLE_CHAT_REGEX =
   /^(hi|hey|hello|yo|sup|thanks|thank you|ok|okay|cool|nice|good morning|good afternoon|good evening)[!. ]*$/i;
+const PROJECT_ACTION_REGEX =
+  /\b(create|update|edit|modify|rewrite|refactor|rename|delete|remove|read|list|open|fix|implement)\b/i;
+const PROJECT_TARGET_REGEX =
+  /\b(file|folder|project|codebase|repository|repo|src\/|\.ts\b|\.tsx\b|\.js\b|\.jsx\b|\.py\b|\.java\b|\.cpp\b|\.c\b|\.html\b|\.css\b|\.json\b|\.md\b)\b/i;
 
 const logMessageProcessing = (
   event: string,
@@ -102,6 +108,20 @@ const isSimpleChatMessage = (message: string) => {
     trimmed.length <= SIMPLE_CHAT_MAX_LENGTH &&
     SIMPLE_CHAT_REGEX.test(trimmed)
   );
+};
+
+const shouldUseToolNetwork = (message: string) =>
+  PROJECT_ACTION_REGEX.test(message) && PROJECT_TARGET_REGEX.test(message);
+
+const limitCandidateModels = (
+  candidateModels: ReturnType<typeof getCandidateAIModels>,
+  requestedModelId?: string | null,
+) => {
+  const maxAttempts = requestedModelId
+    ? MAX_REQUESTED_MODEL_ATTEMPTS
+    : MAX_AUTOMATIC_MODEL_ATTEMPTS;
+
+  return candidateModels.slice(0, maxAttempts);
 };
 
 const PROMPT_HISTORY_LIMIT = 6;
@@ -179,8 +199,12 @@ export const processMessageEvent = async ({
   const systemPrompt =
     CODING_AGENT_SYSTEM_PROMPT + buildConversationContext(recentMessages, messageId);
 
-  const candidateModels = getCandidateAIModels(modelId);
+  const candidateModels = limitCandidateModels(
+    getCandidateAIModels(modelId),
+    modelId,
+  );
   const simpleChat = isSimpleChatMessage(message);
+  const useToolNetwork = shouldUseToolNetwork(message);
 
   if (candidateModels.length === 0) {
     throw new NonRetriableError(
@@ -202,7 +226,11 @@ export const processMessageEvent = async ({
       logMessageProcessing("model-attempt", {
         conversationId,
         messageId,
-        mode: simpleChat ? "simple-chat" : "coding-agent",
+        mode: simpleChat
+          ? "simple-chat"
+          : useToolNetwork
+            ? "coding-agent"
+            : "coding-chat",
         provider: candidateModel.provider,
         requestedModelId: modelId ?? null,
         resolvedModelId: candidateModel.id,
@@ -213,7 +241,7 @@ export const processMessageEvent = async ({
         temperature: 0,
       });
       const codingModel = getAgentKitModelByDefinition(candidateModel, {
-        max_tokens: simpleChat ? 512 : 10000,
+        max_tokens: simpleChat ? 512 : useToolNetwork ? 6000 : 3000,
         temperature: simpleChat ? 0.4 : 0.2,
       });
 
@@ -244,7 +272,7 @@ export const processMessageEvent = async ({
               ? textMessage.content
               : textMessage.content.map((contentPart) => contentPart.text).join("");
         }
-      } else {
+      } else if (useToolNetwork) {
         const codingAgent = createAgent({
           name: "torq-ai",
           description: "The Torq-AI coding agent",
@@ -290,6 +318,30 @@ export const processMessageEvent = async ({
         );
         const lastResult = result.state.results.at(-1);
         const textMessage = lastResult?.output.find(
+          (entry) => entry.type === "text" && entry.role === "assistant",
+        );
+
+        if (textMessage?.type === "text") {
+          assistantResponse =
+            typeof textMessage.content === "string"
+              ? textMessage.content
+              : textMessage.content.map((contentPart) => contentPart.text).join("");
+        }
+      } else {
+        const codingChatAgent = createAgent({
+          name: "torq-ai-coding-chat",
+          description: "A direct coding assistant for problem solving and explanations",
+          system:
+            `${systemPrompt}\n\nAnswer the user's request directly. Do not assume you must edit project files unless they explicitly ask for file or project changes.`,
+          model: codingModel.model,
+        });
+
+        const result = await withTimeout(
+          codingChatAgent.run(message),
+          MESSAGE_RUN_TIMEOUT_MS,
+          `Timed out after ${MESSAGE_RUN_TIMEOUT_MS}ms while generating a coding reply.`,
+        );
+        const textMessage = result.output.find(
           (entry) => entry.type === "text" && entry.role === "assistant",
         );
 
@@ -388,12 +440,13 @@ export const processMessageEvent = async ({
     `I couldn't complete this request with the available AI models (${attemptedModelList}). ` +
     `Last error: ${sanitizeModelError(lastError)}. Please try another model or retry in a moment.`;
 
-  await runner.run("update-assistant-message-error", async () => {
-    await updateMessageContent({
-      messageId,
-      content: failureMessage,
+    await runner.run("update-assistant-message-error", async () => {
+      await updateMessageContent({
+        messageId,
+        content: failureMessage,
+        errorMessage: sanitizeModelError(lastError),
+      });
     });
-  });
 
   logMessageProcessing("all-models-failed", {
     attemptedModels,

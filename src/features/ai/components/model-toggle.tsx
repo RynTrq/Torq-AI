@@ -8,6 +8,7 @@ import {
   AI_PROVIDER_LABELS,
   AI_PROVIDER_ORDER,
   getAIModelDefinition,
+  getAIModelSpecialty,
   getAIModelsByProvider,
 } from "@/lib/ai/model-catalog";
 import { getModelHealthLabel, isModelAvailable } from "@/lib/ai/model-health";
@@ -134,7 +135,7 @@ export const ModelToggle = ({ className }: { className?: string }) => {
                           setSelectedModelId(model.id);
                           setOpen(false);
                         }}
-                        value={`${model.label} ${model.provider} ${model.tagline}`}
+                        value={`${model.label} ${model.provider} ${model.tagline} ${getAIModelSpecialty(model.id)}`}
                         className={cn(
                           "items-start gap-3 px-3 py-3",
                           health && !available ? "opacity-60" : "",
@@ -166,6 +167,14 @@ export const ModelToggle = ({ className }: { className?: string }) => {
                             {isSelected ? (
                               <CheckIcon className="size-4 text-vscode-green" />
                             ) : null}
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="rounded-full border border-vscode-blue/20 bg-vscode-blue/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-vscode-blue">
+                              Best for
+                            </span>
+                            <span className="text-xs font-medium text-foreground/90">
+                              {getAIModelSpecialty(model.id)}
+                            </span>
                           </div>
                           <p className="mt-1 text-xs leading-5 text-muted-foreground">
                             {model.tagline}

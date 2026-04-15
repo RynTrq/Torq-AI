@@ -54,6 +54,44 @@ export interface AIModelDefinition {
   tagline: string;
 }
 
+const MODEL_SPECIALTY_RULES: Array<{
+  matches: string[];
+  specialty: string;
+}> = [
+  {
+    matches: ["safety", "safeguard", "guard", "policy"],
+    specialty: "Safety checks and policy gating",
+  },
+  {
+    matches: ["vision-language", "vl", "multimodal", "embed"],
+    specialty: "Vision, multimodal, and embedding tasks",
+  },
+  {
+    matches: ["arabic"],
+    specialty: "Arabic-language prompts and output",
+  },
+  {
+    matches: ["coding-first", "coding-oriented", "coding workflows"],
+    specialty: "Code generation and engineering help",
+  },
+  {
+    matches: ["reasoning", "reasoning depth", "thought-heavy", "multi-step"],
+    specialty: "Deep reasoning and complex problem solving",
+  },
+  {
+    matches: ["long-context"],
+    specialty: "Long-context conversations and analysis",
+  },
+  {
+    matches: ["low-latency", "fast", "quick", "compact", "smaller", "tiny", "ultra-fast"],
+    specialty: "Fast everyday edits and chat",
+  },
+  {
+    matches: ["general", "balanced", "broad instruct", "broad response"],
+    specialty: "General-purpose assistance",
+  },
+];
+
 export const DEFAULT_AI_MODEL_ID: AIModelId = "qwen/qwen3-coder:free";
 
 export const AI_MODELS: Record<AIModelId, AIModelDefinition> = {
@@ -334,6 +372,19 @@ export const getAIModelDefinition = (modelId?: string | null) => {
   }
 
   return AI_MODELS[DEFAULT_AI_MODEL_ID];
+};
+
+export const getAIModelSpecialty = (modelId?: string | null) => {
+  const model = getAIModelDefinition(modelId);
+  const searchableText = `${model.label} ${model.tagline}`.toLowerCase();
+
+  for (const rule of MODEL_SPECIALTY_RULES) {
+    if (rule.matches.some((match) => searchableText.includes(match))) {
+      return rule.specialty;
+    }
+  }
+
+  return "General-purpose assistance";
 };
 
 export const getAIModelsByProvider = (provider: AIProvider) =>

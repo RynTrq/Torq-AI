@@ -4,6 +4,7 @@ import {
   AI_MODELS,
   AI_PROVIDER_LABELS,
   getAIModelDefinition,
+  getAIModelSpecialty,
 } from "../src/lib/ai/model-catalog";
 
 describe("AI model catalog", () => {
@@ -23,5 +24,17 @@ describe("AI model catalog", () => {
 
   it("falls back to the default model for unknown IDs", () => {
     expect(getAIModelDefinition("not-a-model").id).toBe("qwen/qwen3-coder:free");
+  });
+
+  it("derives a user-facing specialty label for models", () => {
+    expect(getAIModelSpecialty("qwen/qwen3-coder:free")).toBe(
+      "Code generation and engineering help",
+    );
+    expect(getAIModelSpecialty("grok-4")).toBe(
+      "Deep reasoning and complex problem solving",
+    );
+    expect(getAIModelSpecialty("allam-2-7b")).toBe(
+      "Arabic-language prompts and output",
+    );
   });
 });
