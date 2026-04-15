@@ -15,7 +15,12 @@ export const processMessage = inngest.createFunction(
       },
     ],
     onFailure: async ({ event, step }) => {
-      const { messageId } = event.data.event.data as MessageEvent;
+      const { messageId, traceId } = event.data.event.data as MessageEvent;
+
+      console.error("[torq-ai][message] inngest-on-failure", {
+        messageId,
+        traceId: traceId ?? null,
+      });
 
       await step.run("update-message-on-failure", async () => {
         const existingMessage = await getMessageById(messageId);

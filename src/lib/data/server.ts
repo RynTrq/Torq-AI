@@ -779,6 +779,69 @@ export const listProcessingMessagesForConversation = async (
   return messages.map(serializeMessage);
 };
 
+const STALE_MESSAGE_TIMEOUT_MS = 90_000;
+
+const buildStaleProcessingContent = () =>
+  [
+    "This request did not finish within the expected worker window.",
+    "",
+    "Torq-AI saved your prompt, but the background AI job never reported a final result.",
+    "Retry the prompt. If this keeps happening, check the hosted Inngest function/webhook logs for this deployment.",
+  ].join("\n");
+
+export const resolveStaleProcessingMessagesForConversation = async (
+  conversationId: string,
+) => {
+  const staleBefore = new Date(Date.now() - STALE_MESSAGE_TIMEOUT_MS);
+
+  const staleMessages = await prisma.message.findMany({
+    where: {
+      conversationId,
+      status: "PROCESSING",
+      createdAt: {
+        lte: staleBefore,
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (staleMessages.length === 0) {
+    return [];
+  }
+
+  console.warn("[torq-ai][messages] resolving-stale-processing-messages", {
+    conversationId,
+    count: staleMessages.length,
+    messageIds: staleMessages.map((message) => message.id),
+    modelIds: staleMessages.map((message) => message.modelId ?? null),
+  });
+
+  const staleContent = buildStaleProcessingContent();
+
+  const updatedMessages = await Promise.all(
+    staleMessages.map(async (message) => {
+      const updated = await prisma.message.update({
+        where: { id: message.id },
+        data: {
+          content: staleContent,
+          errorMessage:
+            "Background AI job timed out before a final response was recorded.",
+          status: "COMPLETED",
+        },
+      });
+
+      return serializeMessage(updated);
+    }),
+  );
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { updatedAt: new Date() },
+  });
+
+  return updatedMessages;
+};
+
 export const createMessage = async ({
   conversationId,
   projectId,

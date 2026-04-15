@@ -167,13 +167,35 @@ export const ConversationSidebar = ({
 
     // Trigger Inngest function via API
     try {
+      console.info("[torq-ai][client] submit", {
+        conversationId,
+        messageLength: trimmedMessage.length,
+        modelId,
+      });
+
       const response = await ky.post("/api/messages", {
         json: {
           conversationId,
           message: trimmedMessage,
           modelId,
         },
-      }).json<{ warning?: string }>();
+      }).json<{
+        eventId?: string;
+        messageId?: string;
+        queued?: boolean;
+        traceId?: string;
+        warning?: string;
+      }>();
+
+      console.info("[torq-ai][client] submit-response", {
+        conversationId,
+        eventId: response.eventId ?? null,
+        messageId: response.messageId ?? null,
+        modelId,
+        queued: response.queued ?? null,
+        traceId: response.traceId ?? null,
+        warning: response.warning ?? null,
+      });
 
       await queryClient.invalidateQueries({
         queryKey: ["messages", conversationId],
@@ -183,10 +205,19 @@ export const ConversationSidebar = ({
       });
 
       if (response.warning) {
-        toast.warning(response.warning);
+        toast.warning(
+          response.traceId
+            ? `${response.warning} Trace ID: ${response.traceId}`
+            : response.warning,
+        );
       }
       setInput("");
     } catch (error) {
+      console.error("[torq-ai][client] submit-failure", {
+        conversationId,
+        error,
+        modelId,
+      });
       toast.error(await getErrorMessage(error, "Message failed to send"));
     }
   };
@@ -249,7 +280,14 @@ export const ConversationSidebar = ({
                       Request cancelled
                     </span>
                   ) : (
-                    <MessageResponse>{message.content}</MessageResponse>
+                    <div className="space-y-2">
+                      <MessageResponse>{message.content}</MessageResponse>
+                      {message.errorMessage ? (
+                        <p className="max-w-[22rem] text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                          {message.errorMessage}
+                        </p>
+                      ) : null}
+                    </div>
                   )}
                 </MessageContent>
                 {message.role === "assistant" &&

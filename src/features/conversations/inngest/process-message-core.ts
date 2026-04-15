@@ -32,6 +32,7 @@ export interface MessageEvent {
   projectId: string;
   message: string;
   modelId?: string | null;
+  traceId?: string | null;
 }
 
 export interface MessageProcessingRunner {
@@ -169,6 +170,7 @@ export const processMessageEvent = async ({
     projectId,
     message,
     modelId,
+    traceId,
   } = eventData;
 
   logMessageProcessing("start", {
@@ -177,6 +179,7 @@ export const processMessageEvent = async ({
     messageLength: message.trim().length,
     projectId,
     requestedModelId: modelId ?? null,
+    traceId: traceId ?? null,
   });
 
   await runner.sleep("wait-for-db-sync", "1s");
@@ -206,6 +209,20 @@ export const processMessageEvent = async ({
   const simpleChat = isSimpleChatMessage(message);
   const useToolNetwork = shouldUseToolNetwork(message);
 
+  logMessageProcessing("resolved-routing", {
+    candidateModelIds: candidateModels.map((candidateModel) => candidateModel.id),
+    conversationId,
+    messageId,
+    mode: simpleChat
+      ? "simple-chat"
+      : useToolNetwork
+        ? "coding-agent"
+        : "coding-chat",
+    projectId,
+    requestedModelId: modelId ?? null,
+    traceId: traceId ?? null,
+  });
+
   if (candidateModels.length === 0) {
     throw new NonRetriableError(
       "No configured AI model is currently available. Add a provider API key or restore provider access, then try again.",
@@ -234,6 +251,7 @@ export const processMessageEvent = async ({
         provider: candidateModel.provider,
         requestedModelId: modelId ?? null,
         resolvedModelId: candidateModel.id,
+        traceId: traceId ?? null,
       });
 
       const titleModel = getAgentKitModelByDefinition(candidateModel, {
@@ -367,11 +385,13 @@ export const processMessageEvent = async ({
       });
 
       logMessageProcessing("model-success", {
+        assistantResponseLength: assistantResponse.length,
         conversationId,
         durationMs: Date.now() - startedAt,
         messageId,
         requestedModelId: modelId ?? null,
         resolvedModelId: candidateModel.id,
+        traceId: traceId ?? null,
         usedFallback: Boolean(modelId && candidateModel.id !== modelId),
       });
 
@@ -427,6 +447,7 @@ export const processMessageEvent = async ({
         messageId,
         requestedModelId: modelId ?? null,
         resolvedModelId: candidateModel.id,
+        traceId: traceId ?? null,
       });
       console.error(
         `AI model ${candidateModel.id} failed during message processing`,
@@ -453,6 +474,7 @@ export const processMessageEvent = async ({
     conversationId,
     messageId,
     requestedModelId: modelId ?? null,
+    traceId: traceId ?? null,
   });
 
   throw new NonRetriableError(failureMessage);

@@ -29,6 +29,7 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   const body = await request.json();
   const { conversationId, message, modelId } = requestSchema.parse(body);
+  const traceId = crypto.randomUUID();
 
   let conversation: Awaited<ReturnType<typeof requireOwnedConversation>>["conversation"];
 
@@ -49,12 +50,25 @@ export async function POST(request: Request) {
     messageLength: message.length,
     modelId: modelId ?? null,
     projectId,
+    traceId,
   });
   const processingMessages = await listProcessingMessagesForConversation(conversationId);
+
+  console.info("[torq-ai][messages-api] processing-messages", {
+    conversationId,
+    count: processingMessages.length,
+    messageIds: processingMessages.map((processingMessage) => processingMessage._id),
+    traceId,
+  });
 
   if (processingMessages.length > 0) {
     await Promise.all(
       processingMessages.map(async (processingMessage) => {
+        console.info("[torq-ai][messages-api] cancelling-processing-message", {
+          conversationId,
+          processingMessageId: processingMessage._id,
+          traceId,
+        });
         await inngest.send({
           name: "message/cancel",
           data: {
@@ -87,6 +101,14 @@ export async function POST(request: Request) {
   });
   const assistantMessageId = assistantMessage._id;
 
+  console.info("[torq-ai][messages-api] created-assistant-message", {
+    assistantMessageId,
+    conversationId,
+    modelId: modelId ?? null,
+    projectId,
+    traceId,
+  });
+
   if (shouldCheckLocalInngestDevServer()) {
     let warning: string | undefined;
 
@@ -98,6 +120,7 @@ export async function POST(request: Request) {
           projectId,
           message,
           modelId,
+          traceId,
         },
         runner: immediateMessageProcessingRunner,
       });
@@ -105,7 +128,12 @@ export async function POST(request: Request) {
       warning =
         "Torq-AI hit an error while processing your message. Check the latest assistant reply for details.";
 
-      console.error("Failed to process message inline", error);
+      console.error("[torq-ai][messages-api] failed-inline-processing", {
+        assistantMessageId,
+        conversationId,
+        error,
+        traceId,
+      });
 
       const existingMessage = await getMessageById(assistantMessageId);
 
@@ -122,6 +150,7 @@ export async function POST(request: Request) {
       success: true,
       messageId: assistantMessageId,
       queued: false,
+      traceId,
       warning,
     });
   }
@@ -139,10 +168,17 @@ export async function POST(request: Request) {
         `I saved your message, but the local AI worker is not running. Start \`${devCommand}\` in another terminal, then resend your prompt.`,
     });
 
+    console.warn("[torq-ai][messages-api] local-worker-unavailable", {
+      assistantMessageId,
+      conversationId,
+      traceId,
+    });
+
     return NextResponse.json({
       success: true,
       messageId: assistantMessageId,
       queued: false,
+      traceId,
       warning,
     });
   }
@@ -160,16 +196,32 @@ export async function POST(request: Request) {
         projectId,
         message,
         modelId,
+        traceId,
       },
     });
 
     eventId = event.ids[0];
+    console.info("[torq-ai][messages-api] enqueued", {
+      conversationId,
+      eventId,
+      messageId: assistantMessageId,
+      modelId: modelId ?? null,
+      projectId,
+      traceId,
+    });
   } catch (error) {
     queued = false;
     warning =
       "Your message was saved, but the AI processor could not start. Try again in a moment.";
 
-    console.error("Failed to enqueue message processing", error);
+    console.error("[torq-ai][messages-api] failed-to-enqueue", {
+      assistantMessageId,
+      conversationId,
+      error,
+      modelId: modelId ?? null,
+      projectId,
+      traceId,
+    });
 
     await updateMessageContent({
       messageId: assistantMessageId,
@@ -183,6 +235,7 @@ export async function POST(request: Request) {
     eventId,
     messageId: assistantMessageId,
     queued,
+    traceId,
     warning,
   });
 }
