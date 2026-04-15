@@ -1,0 +1,45 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: railway-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Build app
+        run: npm run build
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          npx @railway/cli up . \
+            --path-as-root \
+            --ci \
+            --project af129a24-936c-4716-9c24-9f0d44cc29ab \
+            --environment production \
+            --service 0110f0dc-449e-49f2-b4b1-397f70b19d3f \
+            --message "GitHub Actions deploy ${GITHUB_SHA}"
