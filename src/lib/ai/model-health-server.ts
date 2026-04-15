@@ -15,6 +15,9 @@ const HEALTH_PROBE_TIMEOUT_MS = 15_000;
 
 const healthCache = new Map<AIModelId, AIModelHealth>();
 
+export const getCachedAIModelHealth = (modelId: AIModelId) =>
+  healthCache.get(modelId);
+
 const trimDetail = (detail?: string | null) => {
   if (!detail) {
     return undefined;

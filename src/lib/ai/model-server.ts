@@ -17,7 +17,7 @@ import {
   type AIProvider,
   isAIModelId,
 } from "./model-catalog";
-import { getAIModelHealth } from "./model-health-server";
+import { getAIModelHealth, getCachedAIModelHealth } from "./model-health-server";
 import { isModelAvailable } from "./model-health";
 import {
   getProviderApiKey,
@@ -130,6 +130,34 @@ export const resolveHealthyAIModel = async (
   throw new Error(getNoProviderConfiguredError());
 };
 
+export const resolveResponsiveAIModel = (
+  requestedModelId?: string | null,
+): AIModelDefinition => {
+  const candidates = getCandidateAIModels(requestedModelId);
+
+  for (const candidate of candidates) {
+    if (isModelAvailable(getCachedAIModelHealth(candidate.id))) {
+      return candidate;
+    }
+  }
+
+  const uncheckedCandidate = candidates.find(
+    (candidate) => !getCachedAIModelHealth(candidate.id),
+  );
+
+  if (uncheckedCandidate) {
+    return uncheckedCandidate;
+  }
+
+  const fallback = candidates[0];
+
+  if (fallback) {
+    return fallback;
+  }
+
+  throw new Error(getNoProviderConfiguredError());
+};
+
 const openRouterProvider = createAnthropic({
   apiKey: getProviderApiKey("openrouter"),
   baseURL: getProviderBaseUrl("openrouter"),
@@ -173,6 +201,12 @@ export const getSdkModel = (requestedModelId?: string | null) => {
 
 export const getHealthySdkModel = async (requestedModelId?: string | null) => {
   const resolvedModel = await resolveHealthyAIModel(requestedModelId);
+
+  return getSdkModelByDefinition(resolvedModel);
+};
+
+export const getResponsiveSdkModel = (requestedModelId?: string | null) => {
+  const resolvedModel = resolveResponsiveAIModel(requestedModelId);
 
   return getSdkModelByDefinition(resolvedModel);
 };

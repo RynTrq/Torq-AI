@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireUser } from "@/lib/auth";
-import { getHealthyCandidateAIModels, getSdkModelByDefinition } from "@/lib/ai/model-server";
+import { getResponsiveSdkModel } from "@/lib/ai/model-server";
 
 const suggestionSchema = z.object({
   suggestion: z
@@ -72,13 +72,7 @@ export async function POST(request: Request) {
       modelId,
     } = requestSchema.parse(body);
 
-    const healthyModels = await getHealthyCandidateAIModels(modelId);
-
-    if (healthyModels.length === 0) {
-      return NextResponse.json({ suggestion: "" });
-    }
-
-    const { model } = getSdkModelByDefinition(healthyModels[0]);
+    const { model } = getResponsiveSdkModel(modelId);
 
     const prompt = SUGGESTION_PROMPT
       .replace("{fileName}", fileName)
@@ -115,6 +109,15 @@ export async function POST(request: Request) {
       error instanceof Error &&
       (
         error.message.includes("No AI provider is configured") ||
+        error.name.toLowerCase().includes("timeout") ||
+        error.message.toLowerCase().includes("timeout") ||
+        error.message.toLowerCase().includes("timed out") ||
+        error.message.toLowerCase().includes("rate limit") ||
+        error.message.toLowerCase().includes("overloaded") ||
+        error.message.toLowerCase().includes("temporarily unavailable") ||
+        error.message.toLowerCase().includes("service unavailable") ||
+        error.message.toLowerCase().includes("internal server error") ||
+        error.message.toLowerCase().includes("bad gateway") ||
         error.message.toLowerCase().includes("quota") ||
         error.message.toLowerCase().includes("credit") ||
         error.message.toLowerCase().includes("billing") ||
