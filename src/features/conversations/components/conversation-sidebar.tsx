@@ -266,6 +266,11 @@ export const ConversationSidebar = ({
                         <LoaderIcon className="size-4 animate-spin" />
                         <span>Thinking...</span>
                       </div>
+                      {message.errorMessage ? (
+                        <pre className="max-w-[22rem] overflow-x-auto rounded-md border border-[color:var(--workspace-border)] bg-workspace-panel px-3 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-amber-700 dark:text-amber-300">
+                          {message.errorMessage}
+                        </pre>
+                      ) : null}
                       {now - message._creationTime >
                         PROCESSING_STALE_AFTER_MS && (
                         <p className="max-w-[22rem] text-xs leading-relaxed text-amber-700 dark:text-amber-300">

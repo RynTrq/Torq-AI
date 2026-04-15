@@ -8,6 +8,7 @@ import {
   getMessageById,
   listProcessingMessagesForConversation,
   updateMessageContent,
+  updateMessageDebugInfo,
   updateMessageStatus,
 } from "@/lib/data/server";
 import {
@@ -25,6 +26,23 @@ const requestSchema = z.object({
   message: z.string().trim().min(1, "Message is required").max(20_000),
   modelId: z.string().optional().nullable(),
 });
+
+const buildDebugLine = ({
+  traceId,
+  stage,
+  detail,
+}: {
+  traceId: string;
+  stage: string;
+  detail?: string;
+}) =>
+  [
+    `Trace ID: ${traceId}`,
+    `Stage: ${stage}`,
+    detail ? `Detail: ${detail}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -101,6 +119,15 @@ export async function POST(request: Request) {
   });
   const assistantMessageId = assistantMessage._id;
 
+  await updateMessageDebugInfo({
+    messageId: assistantMessageId,
+    errorMessage: buildDebugLine({
+      traceId,
+      stage: "assistant-message-created",
+      detail: `Selected model ${modelId ?? "auto"}`,
+    }),
+  });
+
   console.info("[torq-ai][messages-api] created-assistant-message", {
     assistantMessageId,
     conversationId,
@@ -142,6 +169,11 @@ export async function POST(request: Request) {
           messageId: assistantMessageId,
           content:
             "I ran into an unexpected error while processing your message. Please retry in a moment.",
+          errorMessage: buildDebugLine({
+            traceId,
+            stage: "inline-processing-failed",
+            detail: error instanceof Error ? error.message : "Unknown error",
+          }),
         });
       }
     }
@@ -166,6 +198,11 @@ export async function POST(request: Request) {
       messageId: assistantMessageId,
       content:
         `I saved your message, but the local AI worker is not running. Start \`${devCommand}\` in another terminal, then resend your prompt.`,
+      errorMessage: buildDebugLine({
+        traceId,
+        stage: "local-worker-unavailable",
+        detail: devCommand,
+      }),
     });
 
     console.warn("[torq-ai][messages-api] local-worker-unavailable", {
@@ -188,6 +225,15 @@ export async function POST(request: Request) {
   let eventId: string | undefined;
 
   try {
+    await updateMessageDebugInfo({
+      messageId: assistantMessageId,
+      errorMessage: buildDebugLine({
+        traceId,
+        stage: "enqueueing-message-event",
+        detail: `Selected model ${modelId ?? "auto"}`,
+      }),
+    });
+
     const event = await inngest.send({
       name: "message/sent",
       data: {
@@ -201,6 +247,14 @@ export async function POST(request: Request) {
     });
 
     eventId = event.ids[0];
+    await updateMessageDebugInfo({
+      messageId: assistantMessageId,
+      errorMessage: buildDebugLine({
+        traceId,
+        stage: "message-event-enqueued",
+        detail: `Event ${eventId}`,
+      }),
+    });
     console.info("[torq-ai][messages-api] enqueued", {
       conversationId,
       eventId,
@@ -227,6 +281,11 @@ export async function POST(request: Request) {
       messageId: assistantMessageId,
       content:
         "I saved your message, but the AI processor is unavailable right now. Please try again in a moment.",
+      errorMessage: buildDebugLine({
+        traceId,
+        stage: "enqueue-failed",
+        detail: error instanceof Error ? error.message : "Unknown enqueue failure",
+      }),
     });
   }
 

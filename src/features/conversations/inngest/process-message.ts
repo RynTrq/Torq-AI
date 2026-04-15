@@ -1,5 +1,8 @@
 import { inngest } from "@/inngest/client";
-import { getMessageById, updateMessageContent } from "@/lib/data/server";
+import {
+  getMessageById,
+  updateMessageContent,
+} from "@/lib/data/server";
 import {
   processMessageEvent,
   type MessageEvent,
@@ -33,6 +36,11 @@ export const processMessage = inngest.createFunction(
           messageId,
           content:
             "My apologies, I encountered an error while processing your request. Let me know if you need anything else!",
+          errorMessage: [
+            `Trace ID: ${traceId ?? "unknown"}`,
+            "Stage: inngest-on-failure",
+            "Detail: The hosted Inngest function failed before a final reply was written.",
+          ].join("\n"),
         });
       });
     },

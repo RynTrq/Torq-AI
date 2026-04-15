@@ -7,6 +7,7 @@ import {
   listRecentMessages,
   updateConversationTitle,
   updateMessageContent,
+  updateMessageDebugInfo,
 } from "@/lib/data/server";
 import {
   CODING_AGENT_SYSTEM_PROMPT,
@@ -62,6 +63,23 @@ const logMessageProcessing = (
 ) => {
   console.info(`[torq-ai][message] ${event}`, details);
 };
+
+const buildDebugLine = ({
+  traceId,
+  stage,
+  detail,
+}: {
+  traceId?: string | null;
+  stage: string;
+  detail?: string;
+}) =>
+  [
+    `Trace ID: ${traceId ?? "unknown"}`,
+    `Stage: ${stage}`,
+    detail ? `Detail: ${detail}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
@@ -157,6 +175,37 @@ const buildConversationContext = (
   return `\n\n<conversation_context>\nUse this recent exchange for context, but answer only the latest user request. Do not repeat prior responses.\n\n${historyText}\n</conversation_context>`;
 };
 
+const persistDebugStage = async ({
+  detail,
+  messageId,
+  runner,
+  stage,
+  traceId,
+}: {
+  detail?: string;
+  messageId: string;
+  runner: MessageProcessingRunner;
+  stage: string;
+  traceId?: string | null;
+}) => {
+  const slug = (detail ?? "status")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "status";
+
+  await runner.run(`debug-${stage}-${slug}`, async () => {
+    await updateMessageDebugInfo({
+      messageId,
+      errorMessage: buildDebugLine({
+        traceId,
+        stage,
+        detail,
+      }),
+    });
+  });
+};
+
 export const processMessageEvent = async ({
   eventData,
   runner,
@@ -180,6 +229,13 @@ export const processMessageEvent = async ({
     projectId,
     requestedModelId: modelId ?? null,
     traceId: traceId ?? null,
+  });
+
+  await persistDebugStage({
+    messageId,
+    runner,
+    stage: "worker-started",
+    traceId,
   });
 
   await runner.sleep("wait-for-db-sync", "1s");
@@ -223,6 +279,14 @@ export const processMessageEvent = async ({
     traceId: traceId ?? null,
   });
 
+  await persistDebugStage({
+    detail: `Mode ${simpleChat ? "simple-chat" : useToolNetwork ? "coding-agent" : "coding-chat"} with ${candidateModels.length} candidate models`,
+    messageId,
+    runner,
+    stage: "routing-resolved",
+    traceId,
+  });
+
   if (candidateModels.length === 0) {
     throw new NonRetriableError(
       "No configured AI model is currently available. Add a provider API key or restore provider access, then try again.",
@@ -240,6 +304,14 @@ export const processMessageEvent = async ({
     const startedAt = Date.now();
 
     try {
+      await persistDebugStage({
+        detail: `${candidateModel.label} (${candidateModel.id})`,
+        messageId,
+        runner,
+        stage: "model-attempt",
+        traceId,
+      });
+
       logMessageProcessing("model-attempt", {
         conversationId,
         messageId,
@@ -381,6 +453,7 @@ export const processMessageEvent = async ({
           messageId,
           content: assistantResponse,
           modelId: candidateModel.id,
+          errorMessage: null,
         });
       });
 
@@ -440,6 +513,13 @@ export const processMessageEvent = async ({
       };
     } catch (error) {
       lastError = error;
+      await persistDebugStage({
+        detail: `${candidateModel.id}: ${sanitizeModelError(error)}`,
+        messageId,
+        runner,
+        stage: "model-failure",
+        traceId,
+      });
       logMessageProcessing("model-failure", {
         conversationId,
         durationMs: Date.now() - startedAt,
@@ -465,7 +545,11 @@ export const processMessageEvent = async ({
       await updateMessageContent({
         messageId,
         content: failureMessage,
-        errorMessage: sanitizeModelError(lastError),
+        errorMessage: buildDebugLine({
+          traceId,
+          stage: "all-models-failed",
+          detail: sanitizeModelError(lastError),
+        }),
       });
     });
 

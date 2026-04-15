@@ -824,8 +824,13 @@ export const resolveStaleProcessingMessagesForConversation = async (
         where: { id: message.id },
         data: {
           content: staleContent,
-          errorMessage:
-            "Background AI job timed out before a final response was recorded.",
+          errorMessage: [
+            message.errorMessage,
+            "Stage: stale-processing-timeout",
+            "Detail: Background AI job timed out before a final response was recorded.",
+          ]
+            .filter(Boolean)
+            .join("\n"),
           status: "COMPLETED",
         },
       });
@@ -888,7 +893,7 @@ export const updateMessageContent = async ({
   messageId: string;
   content: string;
   modelId?: string;
-  errorMessage?: string;
+  errorMessage?: string | null;
 }) => {
   const message = await prisma.message.update({
     where: { id: messageId },
@@ -897,6 +902,28 @@ export const updateMessageContent = async ({
       modelId,
       errorMessage,
       status: "COMPLETED",
+    },
+  });
+
+  await prisma.conversation.update({
+    where: { id: message.conversationId },
+    data: { updatedAt: new Date() },
+  });
+
+  return serializeMessage(message);
+};
+
+export const updateMessageDebugInfo = async ({
+  messageId,
+  errorMessage,
+}: {
+  messageId: string;
+  errorMessage?: string | null;
+}) => {
+  const message = await prisma.message.update({
+    where: { id: messageId },
+    data: {
+      errorMessage,
     },
   });
 
