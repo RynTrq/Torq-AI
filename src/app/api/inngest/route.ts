@@ -5,6 +5,10 @@ import { processMessage } from "@/features/conversations/inngest/process-message
 import { importGithubRepo } from "@/features/projects/inngest/import-github-repo";
 import { exportToGithub } from "@/features/projects/inngest/export-to-github";
 
+const serveHost = process.env.RAILWAY_PUBLIC_DOMAIN
+  ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+  : process.env.NEXTAUTH_URL?.trim() || undefined;
+
 const handlers = serve({
   client: inngest,
   functions: [
@@ -12,6 +16,8 @@ const handlers = serve({
     importGithubRepo,
     exportToGithub,
   ],
+  serveHost,
+  servePath: "/api/inngest",
 });
 
 const logInngestRequest = (method: string, request: Request) => {
