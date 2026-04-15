@@ -104,7 +104,7 @@ export const exportToGithub = inngest.createFunction(
     }
 
     const files = await step.run("fetch-project-files", async () => {
-      return await listProjectFiles(projectId);
+      return await listProjectFiles(projectId, { includeContent: true });
     }) as FileWithUrl[];
 
     const { filesByPath } = buildProjectFilePathMaps(files);

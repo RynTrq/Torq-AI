@@ -11,11 +11,32 @@ interface ModelHealthResponse {
   healthByModelId: Record<AIModelId, AIModelHealth>;
 }
 
+const MODEL_HEALTH_CACHE_TTL_MS = 60_000;
+
+let cachedModelHealth: {
+  data: ModelHealthResponse;
+  fetchedAt: number;
+} | null = null;
+
 export const useModelHealth = () => {
-  const [data, setData] = useState<ModelHealthResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [data, setData] = useState<ModelHealthResponse | null>(
+    cachedModelHealth &&
+      Date.now() - cachedModelHealth.fetchedAt < MODEL_HEALTH_CACHE_TTL_MS
+      ? cachedModelHealth.data
+      : null,
+  );
+  const [isLoading, setIsLoading] = useState(data === null);
 
   useEffect(() => {
+    if (
+      cachedModelHealth &&
+      Date.now() - cachedModelHealth.fetchedAt < MODEL_HEALTH_CACHE_TTL_MS
+    ) {
+      setData(cachedModelHealth.data);
+      setIsLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
 
     const load = async () => {
@@ -30,6 +51,10 @@ export const useModelHealth = () => {
         }
 
         const nextData = (await response.json()) as ModelHealthResponse;
+        cachedModelHealth = {
+          data: nextData,
+          fetchedAt: Date.now(),
+        };
         setData(nextData);
       } catch {
         // Ignore client-side health fetch errors and keep the selector usable.

@@ -223,7 +223,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const files = await listProjectFiles(projectId);
+  const files = await listProjectFiles(projectId, { includeContent: true });
   const file = files.find((candidate) => candidate._id === fileId);
 
   if (!file || file.type !== "file") {

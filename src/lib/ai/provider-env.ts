@@ -6,6 +6,7 @@ const PROVIDER_ENV_ALIASES: Record<AIProvider, string[]> = {
   anthropic: ["ANTHROPIC_API_KEY"],
   google: ["GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY"],
   openai: ["OPENAI_API_KEY"],
+  groq: ["GROQ_API_KEY"],
   xai: ["XAI_API_KEY"],
 };
 

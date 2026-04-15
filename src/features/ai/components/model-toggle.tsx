@@ -170,7 +170,7 @@ export const ModelToggle = ({ className }: { className?: string }) => {
                           <p className="mt-1 text-xs leading-5 text-muted-foreground">
                             {model.tagline}
                           </p>
-                          {health?.detail ? (
+                          {health?.detail && !available ? (
                             <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
                               {health.detail}
                             </p>

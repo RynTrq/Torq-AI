@@ -6,7 +6,7 @@ import { requireOwnedConversation } from "@/lib/data/authz";
 import {
   createMessage,
   getMessageById,
-  listProcessingMessages,
+  listProcessingMessagesForConversation,
   updateMessageContent,
   updateMessageStatus,
 } from "@/lib/data/server";
@@ -22,7 +22,7 @@ import {
 
 const requestSchema = z.object({
   conversationId: z.string(),
-  message: z.string(),
+  message: z.string().trim().min(1, "Message is required").max(20_000),
   modelId: z.string().optional().nullable(),
 });
 
@@ -44,7 +44,13 @@ export async function POST(request: Request) {
   }
 
   const projectId = conversation.projectId;
-  const processingMessages = await listProcessingMessages(projectId);
+  console.info("[torq-ai][messages-api] received", {
+    conversationId,
+    messageLength: message.length,
+    modelId: modelId ?? null,
+    projectId,
+  });
+  const processingMessages = await listProcessingMessagesForConversation(conversationId);
 
   if (processingMessages.length > 0) {
     await Promise.all(

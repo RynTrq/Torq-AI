@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createTool } from "@inngest/agent-kit";
 
-import { getFileById } from "@/lib/data/server";
+import { getFilesByIds } from "@/lib/data/server";
 
 interface ReadFilesToolOptions {
   projectId: string;
@@ -30,19 +30,19 @@ export const createReadFilesTool = ({ projectId }: ReadFilesToolOptions) => {
 
       try {
         return await toolStep?.run("read-files", async () => {
-          const results: { id: string; name: string; content: string }[] = [];
-
-          for (const fileId of fileIds) {
-            const file = await getFileById(fileId);
-
-            if (file && file.projectId === projectId && file.content) {
-              results.push({
-                id: file._id,
-                name: file.name,
-                content: file.content,
-              });
-            }
-          }
+          const files = await getFilesByIds(fileIds, { includeContent: true });
+          const results = files
+            .filter(
+              (file) =>
+                file.projectId === projectId &&
+                file.type === "file" &&
+                typeof file.content === "string",
+            )
+            .map((file) => ({
+              id: file._id,
+              name: file.name,
+              content: file.content as string,
+            }));
 
           if (results.length === 0) {
             return "Error: No files found with provided IDs. Use listFiles to get valid fileIDs.";

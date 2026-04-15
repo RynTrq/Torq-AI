@@ -24,7 +24,7 @@ import {
 } from "@/components/ai-elements/prompt-input";
 
 import { Id } from "@/lib/data/app-types";
-import { useModelStore } from "@/features/ai/store/use-model-store";
+import { getSelectedModelId } from "@/features/ai/store/use-model-store";
 
 interface NewProjectDialogProps {
   open: boolean;
@@ -38,8 +38,6 @@ export const NewProjectDialog = ({
   const router = useRouter();
   const [input, setInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const selectedModelId = useModelStore((state) => state.selectedModelId);
-
   const getErrorMessage = async (error: unknown) => {
     if (error instanceof HTTPError) {
       try {
@@ -61,6 +59,7 @@ export const NewProjectDialog = ({
 
   const handleSubmit = async (message: PromptInputMessage) => {
     if (!message.text) return;
+    const modelId = getSelectedModelId();
 
     setIsSubmitting(true);
 
@@ -68,7 +67,7 @@ export const NewProjectDialog = ({
       const { projectId, warning } = await ky
         .post("/api/projects/create-with-prompt", {
           json: {
-            modelId: selectedModelId,
+            modelId,
             prompt: message.text.trim(),
           },
         })

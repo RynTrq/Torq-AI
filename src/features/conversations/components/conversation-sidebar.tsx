@@ -1,6 +1,6 @@
 import ky, { HTTPError } from "ky";
 import { toast } from "sonner";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { 
   CopyIcon, 
@@ -38,12 +38,14 @@ import {
   useCreateConversation,
   useMessages,
 } from "../hooks/use-conversations";
-import { useModelStore } from "@/features/ai/store/use-model-store";
+import {
+  getSelectedModelId,
+  useModelStore,
+} from "@/features/ai/store/use-model-store";
 
 import { Id } from "@/lib/data/app-types";
 import { DEFAULT_CONVERSATION_TITLE } from "../constants";
 import { PastConversationsDialog } from "./past-conversations-dialog";
-import { AI_MODEL_IDS, AI_MODELS } from "@/lib/ai/model-catalog";
 
 interface ConversationSidebarProps {
   projectId: Id<"projects">;
@@ -82,11 +84,8 @@ export const ConversationSidebar = ({
     pastConversationsOpen,
     setPastConversationsOpen
   ] = useState(false);
-  const selectedModelId = useModelStore((state) => state.selectedModelId);
-  const setSelectedModelId = useModelStore((state) => state.setSelectedModelId);
   const queryClient = useQueryClient();
   const [now, setNow] = useState(() => Date.now());
-  const lastAutoSwitchedMessageIdRef = useRef<string | null>(null);
 
   const createConversation = useCreateConversation();
   const conversations = useConversations(projectId);
@@ -115,41 +114,6 @@ export const ConversationSidebar = ({
       window.clearInterval(interval);
     };
   }, [isProcessing]);
-
-  useEffect(() => {
-    const latestAssistantMessage = [...(conversationMessages ?? [])]
-      .reverse()
-      .find((message) => message.role === "assistant" && message.status === "completed");
-
-    if (!latestAssistantMessage) {
-      return;
-    }
-
-    if (lastAutoSwitchedMessageIdRef.current === latestAssistantMessage._id) {
-      return;
-    }
-
-    const match = latestAssistantMessage.content.match(
-      /^Requested model unavailable, continued with (.+?)\./,
-    );
-
-    if (!match) {
-      return;
-    }
-
-    const fallbackModel = AI_MODEL_IDS.map((modelId) => AI_MODELS[modelId]).find(
-      (model) => model.label === match[1],
-    );
-
-    if (!fallbackModel || fallbackModel.id === selectedModelId) {
-      lastAutoSwitchedMessageIdRef.current = latestAssistantMessage._id;
-      return;
-    }
-
-    setSelectedModelId(fallbackModel.id);
-    lastAutoSwitchedMessageIdRef.current = latestAssistantMessage._id;
-    toast.info(`Switched Torq-AI to ${fallbackModel.label} because the previous model was unavailable.`);
-  }, [conversationMessages, selectedModelId, setSelectedModelId]);
 
   const handleCancel = async () => {
     try {
@@ -180,6 +144,7 @@ export const ConversationSidebar = ({
 
   const handleSubmit = async (message: PromptInputMessage) => {
     const trimmedMessage = message.text.trim();
+    const modelId = getSelectedModelId();
 
     // If processing and no new message, this is just a stop function
     if (isProcessing && !trimmedMessage) {
@@ -207,7 +172,7 @@ export const ConversationSidebar = ({
         json: {
           conversationId,
           message: trimmedMessage,
-          modelId: selectedModelId,
+          modelId,
         },
       }).json<{ warning?: string }>();
 
@@ -274,8 +239,9 @@ export const ConversationSidebar = ({
                       {now - message._creationTime >
                         PROCESSING_STALE_AFTER_MS && (
                         <p className="max-w-[22rem] text-xs leading-relaxed text-amber-700 dark:text-amber-300">
-                          This request is taking longer than expected. Retry the
-                          prompt, or switch to a Gemini model and send it again.
+                          This request is taking longer than expected. Stop it
+                          and retry, or switch to another model and send it
+                          again.
                         </p>
                       )}
                     </div>

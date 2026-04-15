@@ -47,7 +47,8 @@ const serializeProject = (project: {
   settings: (project.settings as ProjectSettings | null) ?? undefined,
 });
 
-const serializeFile = (file: {
+const serializeFile = (
+  file: {
   id: string;
   createdAt: Date;
   projectId: string;
@@ -58,14 +59,16 @@ const serializeFile = (file: {
   storagePath: string | null;
   mimeType: string | null;
   updatedAt: Date;
-}): ProjectFileRecord => ({
+  },
+  options?: { includeContent?: boolean },
+): ProjectFileRecord => ({
   _id: file.id,
   _creationTime: file.createdAt.getTime(),
   projectId: file.projectId,
   parentId: file.parentId ?? undefined,
   name: file.name,
   type: file.kind === "FOLDER" ? "folder" : "file",
-  content: file.content ?? undefined,
+  content: options?.includeContent ? file.content ?? undefined : undefined,
   storageId: file.storagePath ?? undefined,
   storagePath: file.storagePath ?? undefined,
   storageUrl: file.storagePath ?? null,
@@ -325,29 +328,66 @@ export const updateProjectExportStatus = async ({
   return serializeProject(updated);
 };
 
-export const listProjectFiles = async (projectId: string) => {
+export const listProjectFiles = async (
+  projectId: string,
+  options?: { includeContent?: boolean },
+) => {
   const files = await prisma.projectFile.findMany({
     where: { projectId },
     orderBy: [{ kind: "asc" }, { name: "asc" }],
   });
 
-  return files.map(serializeFile);
+  return files.map((file) => serializeFile(file, options));
 };
 
-export const getFileById = async (fileId: string) => {
+export const getFileById = async (
+  fileId: string,
+  options?: { includeContent?: boolean },
+) => {
   const file = await prisma.projectFile.findUnique({
     where: { id: fileId },
   });
 
-  return file ? serializeFile(file) : null;
+  return file ? serializeFile(file, { includeContent: options?.includeContent ?? true }) : null;
+};
+
+export const getFilesByIds = async (
+  fileIds: string[],
+  options?: { includeContent?: boolean },
+) => {
+  if (fileIds.length === 0) {
+    return [];
+  }
+
+  const files = await prisma.projectFile.findMany({
+    where: {
+      id: {
+        in: fileIds,
+      },
+    },
+  });
+
+  const byId = new Map(
+    files.map((file) => [
+      file.id,
+      serializeFile(file, { includeContent: options?.includeContent ?? true }),
+    ]),
+  );
+
+  return fileIds.flatMap((fileId) => {
+    const file = byId.get(fileId);
+    return file ? [file] : [];
+  });
 };
 
 export const getFolderContents = async ({
   projectId,
   parentId,
+  includeContent,
 }: {
   projectId: string;
   parentId?: string;
+  includeContent?: boolean;
 }) => {
   const files = await prisma.projectFile.findMany({
     where: {
@@ -357,7 +397,7 @@ export const getFolderContents = async ({
     orderBy: [{ kind: "asc" }, { name: "asc" }],
   });
 
-  return files.map(serializeFile);
+  return files.map((file) => serializeFile(file, { includeContent }));
 };
 
 export const getFilePath = async (fileId: string) => {
@@ -723,6 +763,20 @@ export const listRecentMessages = async ({
   });
 
   return messages.reverse().map(serializeMessage);
+};
+
+export const listProcessingMessagesForConversation = async (
+  conversationId: string,
+) => {
+  const messages = await prisma.message.findMany({
+    where: {
+      conversationId,
+      status: "PROCESSING",
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return messages.map(serializeMessage);
 };
 
 export const createMessage = async ({

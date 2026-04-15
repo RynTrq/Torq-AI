@@ -5,13 +5,15 @@ export const AI_MODEL_IDS = [
   "gemini-2.5-pro",
   "gpt-5-mini",
   "gpt-5.2",
+  "llama-3.3-70b-versatile",
+  "openai/gpt-oss-120b",
   "grok-4",
   "grok-4.20-reasoning",
   "grok-3-mini",
 ] as const;
 
 export type AIModelId = (typeof AI_MODEL_IDS)[number];
-export type AIProvider = "anthropic" | "google" | "openai" | "xai";
+export type AIProvider = "anthropic" | "google" | "openai" | "groq" | "xai";
 
 export interface AIModelDefinition {
   id: AIModelId;
@@ -59,6 +61,18 @@ export const AI_MODELS: Record<AIModelId, AIModelDefinition> = {
     provider: "openai",
     tagline: "OpenAI’s flagship model for complex coding work.",
   },
+  "llama-3.3-70b-versatile": {
+    id: "llama-3.3-70b-versatile",
+    label: "Llama 3.3 70B Versatile",
+    provider: "groq",
+    tagline: "Fast Groq-hosted Meta model for general coding and chat work.",
+  },
+  "openai/gpt-oss-120b": {
+    id: "openai/gpt-oss-120b",
+    label: "GPT-OSS 120B",
+    provider: "groq",
+    tagline: "High-capability Groq-hosted open model for deeper engineering tasks.",
+  },
   "grok-4": {
     id: "grok-4",
     label: "Grok 4",
@@ -83,6 +97,7 @@ export const AI_PROVIDER_LABELS: Record<AIProvider, string> = {
   anthropic: "Anthropic",
   google: "Google",
   openai: "OpenAI",
+  groq: "Groq",
   xai: "xAI",
 };
 
@@ -90,6 +105,7 @@ export const AI_PROVIDER_ORDER: AIProvider[] = [
   "anthropic",
   "google",
   "openai",
+  "groq",
   "xai",
 ];
 

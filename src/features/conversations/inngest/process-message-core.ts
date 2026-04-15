@@ -23,7 +23,7 @@ import { createDeleteFilesTool } from "./tools/delete-files";
 import { createScrapeUrlsTool } from "./tools/scrape-urls";
 import {
   getAgentKitModelByDefinition,
-  getHealthyCandidateAIModels,
+  getCandidateAIModels,
 } from "@/lib/ai/model-server";
 
 export interface MessageEvent {
@@ -44,6 +44,18 @@ export const immediateMessageProcessingRunner: MessageProcessingRunner = {
   sleep: async () => {},
 };
 
+const MESSAGE_RUN_TIMEOUT_MS = 45_000;
+const SIMPLE_CHAT_MAX_LENGTH = 80;
+const SIMPLE_CHAT_REGEX =
+  /^(hi|hey|hello|yo|sup|thanks|thank you|ok|okay|cool|nice|good morning|good afternoon|good evening)[!. ]*$/i;
+
+const logMessageProcessing = (
+  event: string,
+  details: Record<string, unknown>,
+) => {
+  console.info(`[torq-ai][message] ${event}`, details);
+};
+
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
     return error.message;
@@ -60,6 +72,70 @@ const sanitizeModelError = (error: unknown) => {
     : message;
 };
 
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> => {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+};
+
+const isSimpleChatMessage = (message: string) => {
+  const trimmed = message.trim();
+
+  return (
+    trimmed.length > 0 &&
+    trimmed.length <= SIMPLE_CHAT_MAX_LENGTH &&
+    SIMPLE_CHAT_REGEX.test(trimmed)
+  );
+};
+
+const PROMPT_HISTORY_LIMIT = 6;
+const PROMPT_MESSAGE_CHARACTER_LIMIT = 2_000;
+
+const toPromptSnippet = (content: string) => {
+  const trimmed = content.trim().replace(/\s+/g, " ");
+
+  if (trimmed.length <= PROMPT_MESSAGE_CHARACTER_LIMIT) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, PROMPT_MESSAGE_CHARACTER_LIMIT - 3).trimEnd()}...`;
+};
+
+const buildConversationContext = (
+  recentMessages: MessageRecord[],
+  currentMessageId: string,
+) => {
+  const contextMessages = recentMessages
+    .filter((msg) => msg._id !== currentMessageId && msg.content.trim() !== "")
+    .slice(-PROMPT_HISTORY_LIMIT);
+
+  if (contextMessages.length === 0) {
+    return "";
+  }
+
+  const historyText = contextMessages
+    .map((msg) => `${msg.role.toUpperCase()}: ${toPromptSnippet(msg.content)}`)
+    .join("\n\n");
+
+  return `\n\n<conversation_context>\nUse this recent exchange for context, but answer only the latest user request. Do not repeat prior responses.\n\n${historyText}\n</conversation_context>`;
+};
+
 export const processMessageEvent = async ({
   eventData,
   runner,
@@ -74,6 +150,14 @@ export const processMessageEvent = async ({
     message,
     modelId,
   } = eventData;
+
+  logMessageProcessing("start", {
+    conversationId,
+    messageId,
+    messageLength: message.trim().length,
+    projectId,
+    requestedModelId: modelId ?? null,
+  });
 
   await runner.sleep("wait-for-db-sync", "1s");
 
@@ -92,25 +176,15 @@ export const processMessageEvent = async ({
     });
   }) as MessageRecord[];
 
-  let systemPrompt = CODING_AGENT_SYSTEM_PROMPT;
+  const systemPrompt =
+    CODING_AGENT_SYSTEM_PROMPT + buildConversationContext(recentMessages, messageId);
 
-  const contextMessages = recentMessages.filter(
-    (msg) => msg._id !== messageId && msg.content.trim() !== "",
-  );
-
-  if (contextMessages.length > 0) {
-    const historyText = contextMessages
-      .map((msg) => `${msg.role.toUpperCase()}: ${msg.content}`)
-      .join("\n\n");
-
-    systemPrompt += `\n\n## Previous Conversation (for context only - do NOT repeat these responses):\n${historyText}\n\n## Current Request:\nRespond ONLY to the user's new message below. Do not repeat or reference your previous responses.`;
-  }
-
-  const candidateModels = await getHealthyCandidateAIModels(modelId);
+  const candidateModels = getCandidateAIModels(modelId);
+  const simpleChat = isSimpleChatMessage(message);
 
   if (candidateModels.length === 0) {
     throw new NonRetriableError(
-      "No healthy AI model is currently available. Add or top up provider credits, or make sure at least one configured model is healthy.",
+      "No configured AI model is currently available. Add a provider API key or restore provider access, then try again.",
     );
   }
 
@@ -122,104 +196,109 @@ export const processMessageEvent = async ({
 
   for (const candidateModel of candidateModels) {
     attemptedModels.push(candidateModel.label);
+    const startedAt = Date.now();
 
     try {
+      logMessageProcessing("model-attempt", {
+        conversationId,
+        messageId,
+        mode: simpleChat ? "simple-chat" : "coding-agent",
+        provider: candidateModel.provider,
+        requestedModelId: modelId ?? null,
+        resolvedModelId: candidateModel.id,
+      });
+
       const titleModel = getAgentKitModelByDefinition(candidateModel, {
         max_tokens: 64,
         temperature: 0,
       });
       const codingModel = getAgentKitModelByDefinition(candidateModel, {
-        max_tokens: 16000,
-        temperature: 0.3,
+        max_tokens: simpleChat ? 512 : 10000,
+        temperature: simpleChat ? 0.4 : 0.2,
       });
-
-      if (!titleGenerated) {
-        const titleAgent = createAgent({
-          name: "title-generator",
-          system: TITLE_GENERATOR_SYSTEM_PROMPT,
-          model: titleModel.model,
-        });
-
-        const { output } = await titleAgent.run(message);
-
-        const titleTextMessage = output.find(
-          (entry) => entry.type === "text" && entry.role === "assistant",
-        );
-
-        if (titleTextMessage?.type === "text") {
-          const title =
-            typeof titleTextMessage.content === "string"
-              ? titleTextMessage.content.trim()
-              : titleTextMessage.content
-                  .map((contentPart) => contentPart.text)
-                  .join("")
-                  .trim();
-
-          if (title) {
-            await runner.run("update-conversation-title", async () => {
-              await updateConversationTitle({
-                conversationId,
-                title,
-              });
-            });
-
-            titleGenerated = true;
-          }
-        }
-      }
-
-      const codingAgent = createAgent({
-        name: "torq-ai",
-        description: "The Torq-AI coding agent",
-        system: systemPrompt,
-        model: codingModel.model,
-        tools: [
-          createListFilesTool({ projectId }),
-          createReadFilesTool({ projectId }),
-          createUpdateFileTool({ projectId }),
-          createCreateFilesTool({ projectId }),
-          createCreateFolderTool({ projectId }),
-          createRenameFileTool({ projectId }),
-          createDeleteFilesTool({ projectId }),
-          createScrapeUrlsTool(),
-        ],
-      });
-
-      const network = createNetwork({
-        name: "torq-ai-network",
-        agents: [codingAgent],
-        maxIter: 20,
-        router: ({ network }) => {
-          const lastResult = network.state.results.at(-1);
-          const hasTextResponse = lastResult?.output.some(
-            (entry) => entry.type === "text" && entry.role === "assistant",
-          );
-          const hasToolCalls = lastResult?.output.some(
-            (entry) => entry.type === "tool_call",
-          );
-
-          if (hasTextResponse && !hasToolCalls) {
-            return undefined;
-          }
-
-          return codingAgent;
-        },
-      });
-
-      const result = await network.run(message);
-      const lastResult = result.state.results.at(-1);
-      const textMessage = lastResult?.output.find(
-        (entry) => entry.type === "text" && entry.role === "assistant",
-      );
 
       let assistantResponse =
         "I processed your request. Let me know if you need anything else!";
 
-      if (textMessage?.type === "text") {
-        assistantResponse =
-          typeof textMessage.content === "string"
-            ? textMessage.content
-            : textMessage.content.map((contentPart) => contentPart.text).join("");
+      if (simpleChat) {
+        const chatAgent = createAgent({
+          name: "torq-ai-chat",
+          description: "A fast conversational assistant for simple chat turns",
+          system:
+            "You are Torq-AI. Reply briefly, naturally, and helpfully to the user's message. Keep it under 2 sentences unless they ask for more.",
+          model: codingModel.model,
+        });
+
+        const result = await withTimeout(
+          chatAgent.run(message),
+          MESSAGE_RUN_TIMEOUT_MS,
+          `Timed out after ${MESSAGE_RUN_TIMEOUT_MS}ms while generating a chat reply.`,
+        );
+        const textMessage = result.output.find(
+          (entry) => entry.type === "text" && entry.role === "assistant",
+        );
+
+        if (textMessage?.type === "text") {
+          assistantResponse =
+            typeof textMessage.content === "string"
+              ? textMessage.content
+              : textMessage.content.map((contentPart) => contentPart.text).join("");
+        }
+      } else {
+        const codingAgent = createAgent({
+          name: "torq-ai",
+          description: "The Torq-AI coding agent",
+          system: systemPrompt,
+          model: codingModel.model,
+          tools: [
+            createListFilesTool({ projectId }),
+            createReadFilesTool({ projectId }),
+            createUpdateFileTool({ projectId }),
+            createCreateFilesTool({ projectId }),
+            createCreateFolderTool({ projectId }),
+            createRenameFileTool({ projectId }),
+            createDeleteFilesTool({ projectId }),
+            createScrapeUrlsTool(),
+          ],
+        });
+
+        const network = createNetwork({
+          name: "torq-ai-network",
+          agents: [codingAgent],
+          maxIter: 12,
+          router: ({ network }) => {
+            const lastResult = network.state.results.at(-1);
+            const hasTextResponse = lastResult?.output.some(
+              (entry) => entry.type === "text" && entry.role === "assistant",
+            );
+            const hasToolCalls = lastResult?.output.some(
+              (entry) => entry.type === "tool_call",
+            );
+
+            if (hasTextResponse && !hasToolCalls) {
+              return undefined;
+            }
+
+            return codingAgent;
+          },
+        });
+
+        const result = await withTimeout(
+          network.run(message),
+          MESSAGE_RUN_TIMEOUT_MS,
+          `Timed out after ${MESSAGE_RUN_TIMEOUT_MS}ms while processing the request.`,
+        );
+        const lastResult = result.state.results.at(-1);
+        const textMessage = lastResult?.output.find(
+          (entry) => entry.type === "text" && entry.role === "assistant",
+        );
+
+        if (textMessage?.type === "text") {
+          assistantResponse =
+            typeof textMessage.content === "string"
+              ? textMessage.content
+              : textMessage.content.map((contentPart) => contentPart.text).join("");
+        }
       }
 
       if (modelId && candidateModel.id !== modelId) {
@@ -231,8 +310,55 @@ export const processMessageEvent = async ({
         await updateMessageContent({
           messageId,
           content: assistantResponse,
+          modelId: candidateModel.id,
         });
       });
+
+      logMessageProcessing("model-success", {
+        conversationId,
+        durationMs: Date.now() - startedAt,
+        messageId,
+        requestedModelId: modelId ?? null,
+        resolvedModelId: candidateModel.id,
+        usedFallback: Boolean(modelId && candidateModel.id !== modelId),
+      });
+
+      if (!titleGenerated) {
+        const titleAgent = createAgent({
+          name: "title-generator",
+          system: TITLE_GENERATOR_SYSTEM_PROMPT,
+          model: titleModel.model,
+        });
+
+        try {
+          const { output } = await titleAgent.run(message);
+          const titleTextMessage = output.find(
+            (entry) => entry.type === "text" && entry.role === "assistant",
+          );
+
+          if (titleTextMessage?.type === "text") {
+            const title =
+              typeof titleTextMessage.content === "string"
+                ? titleTextMessage.content.trim()
+                : titleTextMessage.content
+                    .map((contentPart) => contentPart.text)
+                    .join("")
+                    .trim();
+
+            if (title) {
+              await runner.run("update-conversation-title", async () => {
+                await updateConversationTitle({
+                  conversationId,
+                  title,
+                });
+              });
+              titleGenerated = true;
+            }
+          }
+        } catch (titleError) {
+          console.warn("Unable to generate conversation title", titleError);
+        }
+      }
 
       return {
         success: true,
@@ -242,6 +368,14 @@ export const processMessageEvent = async ({
       };
     } catch (error) {
       lastError = error;
+      logMessageProcessing("model-failure", {
+        conversationId,
+        durationMs: Date.now() - startedAt,
+        error: sanitizeModelError(error),
+        messageId,
+        requestedModelId: modelId ?? null,
+        resolvedModelId: candidateModel.id,
+      });
       console.error(
         `AI model ${candidateModel.id} failed during message processing`,
         error,
@@ -259,6 +393,13 @@ export const processMessageEvent = async ({
       messageId,
       content: failureMessage,
     });
+  });
+
+  logMessageProcessing("all-models-failed", {
+    attemptedModels,
+    conversationId,
+    messageId,
+    requestedModelId: modelId ?? null,
   });
 
   throw new NonRetriableError(failureMessage);

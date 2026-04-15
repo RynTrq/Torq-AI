@@ -7,6 +7,40 @@ interface ListFilesToolOptions {
   projectId: string;
 }
 
+const buildPathMap = (
+  files: Array<{
+    _id: string;
+    name: string;
+    parentId?: string;
+  }>,
+) => {
+  const byId = new Map(files.map((file) => [file._id, file]));
+  const pathById = new Map<string, string>();
+
+  const getPath = (fileId: string): string => {
+    const cached = pathById.get(fileId);
+    if (cached) {
+      return cached;
+    }
+
+    const file = byId.get(fileId);
+    if (!file) {
+      return "";
+    }
+
+    const parentPath = file.parentId ? getPath(file.parentId) : "";
+    const path = parentPath ? `${parentPath}/${file.name}` : file.name;
+    pathById.set(fileId, path);
+    return path;
+  };
+
+  for (const file of files) {
+    getPath(file._id);
+  }
+
+  return pathById;
+};
+
 export const createListFilesTool = ({
   projectId,
 }: ListFilesToolOptions) => {
@@ -19,6 +53,7 @@ export const createListFilesTool = ({
       try {
         return await toolStep?.run("list-files", async () => {
           const files = await listProjectFiles(projectId);
+          const pathById = buildPathMap(files);
 
           const sorted = files.sort((a, b) => {
             if (a.type !== b.type) {
@@ -32,6 +67,7 @@ export const createListFilesTool = ({
             name: f.name,
             type: f.type,
             parentId: f.parentId ?? null,
+            path: pathById.get(f._id) ?? f.name,
           }));
 
           return JSON.stringify(fileList);

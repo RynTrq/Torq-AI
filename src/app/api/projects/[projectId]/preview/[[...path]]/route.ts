@@ -27,7 +27,7 @@ export async function GET(
     );
   }
 
-  const files = await listProjectFiles(projectId);
+  const files = await listProjectFiles(projectId, { includeContent: true });
   const requestedPath = path.join("/");
   const { filesByPath } = buildProjectFilePathMaps(files);
   const file = filesByPath.get(requestedPath);

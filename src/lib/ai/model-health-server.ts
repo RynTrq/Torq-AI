@@ -32,12 +32,18 @@ const getConfiguredKey = (model: AIModelDefinition) => {
       return getProviderApiKey("google");
     case "openai":
       return getProviderApiKey("openai");
+    case "groq":
+      return getProviderApiKey("groq");
     case "xai":
       return getProviderApiKey("xai");
   }
 };
 
 const parseResponseDetail = async (response: Response) => {
+  if (response.ok) {
+    return undefined;
+  }
+
   const text = await response.text();
 
   try {
@@ -145,6 +151,20 @@ const probeModel = async (model: AIModelDefinition): Promise<AIModelHealth> => {
       break;
     case "openai":
       response = await fetch("https://api.openai.com/v1/responses", {
+        body: JSON.stringify({
+          input: "Say ok",
+          max_output_tokens: 16,
+          model: model.id,
+        }),
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json",
+        },
+        method: "POST",
+      });
+      break;
+    case "groq":
+      response = await fetch("https://api.groq.com/openai/v1/responses", {
         body: JSON.stringify({
           input: "Say ok",
           max_output_tokens: 16,
