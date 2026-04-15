@@ -1,15 +1,8 @@
 import "server-only";
 
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
-import {
-  anthropic as agentAnthropic,
-  gemini,
-  grok,
-  openai as agentOpenAI,
-} from "@inngest/agent-kit";
+import { anthropic as agentAnthropic, grok } from "@inngest/agent-kit";
 
 import {
   AI_MODELS,
@@ -21,7 +14,11 @@ import {
 } from "./model-catalog";
 import { getAIModelHealth } from "./model-health-server";
 import { isModelAvailable } from "./model-health";
-import { getProviderApiKey, getProviderEnvKeys } from "./provider-env";
+import {
+  getProviderApiKey,
+  getProviderBaseUrl,
+  getProviderEnvKeys,
+} from "./provider-env";
 
 interface AgentKitDefaultParameters {
   max_tokens?: number;
@@ -52,9 +49,6 @@ export const getCandidateAIModels = (
 
   addCandidate(requestedModel);
 
-  // After the requested model, prefer jumping to other providers before
-  // trying another model from the same provider. This avoids wasting a turn
-  // when an entire provider is unavailable because of billing/quota issues.
   for (const modelId of AI_MODEL_IDS) {
     const model = AI_MODELS[modelId];
     if (model.provider !== requestedModel?.provider) {
@@ -78,33 +72,39 @@ export const getCandidateAIModels = (
   return candidates;
 };
 
-export const resolveAIModel = (requestedModelId?: string | null): AIModelDefinition => {
+const getNoProviderConfiguredError = () =>
+  `No AI provider is configured. Add ${getProviderEnvKeys("openrouter").join(" or ")} or ${getProviderEnvKeys("xai")[0]}.`;
+
+export const resolveAIModel = (
+  requestedModelId?: string | null,
+): AIModelDefinition => {
   const firstAvailable = getCandidateAIModels(requestedModelId)[0];
 
   if (firstAvailable) {
     return firstAvailable;
   }
 
-  throw new Error(
-    `No AI provider is configured. Add ${getProviderEnvKeys("anthropic")[0]}, ${getProviderEnvKeys("google").join(" or ")}, ${getProviderEnvKeys("openai")[0]}, ${getProviderEnvKeys("groq")[0]}, or ${getProviderEnvKeys("xai")[0]}.`,
-  );
+  throw new Error(getNoProviderConfiguredError());
 };
 
 export const getHealthyCandidateAIModels = async (
   requestedModelId?: string | null,
 ) => {
   const candidates = getCandidateAIModels(requestedModelId);
-  const healthyCandidates: AIModelDefinition[] = [];
+  const healthByModelId = new Map(
+    (
+      await Promise.all(
+        candidates.map(async (candidate) => [
+          candidate.id,
+          await getAIModelHealth(candidate.id),
+        ] as const),
+      )
+    ).map(([modelId, health]) => [modelId, health]),
+  );
 
-  for (const candidate of candidates) {
-    const health = await getAIModelHealth(candidate.id);
-
-    if (isModelAvailable(health)) {
-      healthyCandidates.push(candidate);
-    }
-  }
-
-  return healthyCandidates;
+  return candidates.filter((candidate) =>
+    isModelAvailable(healthByModelId.get(candidate.id)),
+  );
 };
 
 export const resolveHealthyAIModel = async (
@@ -122,26 +122,13 @@ export const resolveHealthyAIModel = async (
     return fallback;
   }
 
-  throw new Error(
-    `No AI provider is configured. Add ${getProviderEnvKeys("anthropic")[0]}, ${getProviderEnvKeys("google").join(" or ")}, ${getProviderEnvKeys("openai")[0]}, ${getProviderEnvKeys("groq")[0]}, or ${getProviderEnvKeys("xai")[0]}.`,
-  );
+  throw new Error(getNoProviderConfiguredError());
 };
 
-const anthropicProvider = createAnthropic({
-  apiKey: getProviderApiKey("anthropic"),
-});
-
-const googleProvider = createGoogleGenerativeAI({
-  apiKey: getProviderApiKey("google"),
-});
-
-const openAIProvider = createOpenAI({
-  apiKey: getProviderApiKey("openai"),
-});
-
-const groqProvider = createOpenAI({
-  apiKey: getProviderApiKey("groq"),
-  baseURL: "https://api.groq.com/openai/v1",
+const openRouterProvider = createAnthropic({
+  apiKey: getProviderApiKey("openrouter"),
+  baseURL: getProviderBaseUrl("openrouter"),
+  name: "openrouter.messages",
 });
 
 const xaiProvider = createXai({
@@ -150,25 +137,10 @@ const xaiProvider = createXai({
 
 export const getSdkModelByDefinition = (resolvedModel: AIModelDefinition) => {
   switch (resolvedModel.provider) {
-    case "anthropic":
+    case "openrouter":
       return {
         resolvedModel,
-        model: anthropicProvider(resolvedModel.id),
-      };
-    case "google":
-      return {
-        resolvedModel,
-        model: googleProvider(resolvedModel.id),
-      };
-    case "openai":
-      return {
-        resolvedModel,
-        model: openAIProvider(resolvedModel.id),
-      };
-    case "groq":
-      return {
-        resolvedModel,
-        model: groqProvider(resolvedModel.id),
+        model: openRouterProvider(resolvedModel.id),
       };
     case "xai":
       return {
@@ -195,11 +167,12 @@ export const getAgentKitModelByDefinition = (
   defaultParameters?: AgentKitDefaultParameters,
 ) => {
   switch (resolvedModel.provider) {
-    case "anthropic":
+    case "openrouter":
       return {
         resolvedModel,
         model: agentAnthropic({
-          apiKey: getProviderApiKey("anthropic"),
+          apiKey: getProviderApiKey("openrouter"),
+          baseUrl: getProviderBaseUrl("openrouter"),
           model: resolvedModel.id,
           defaultParameters: {
             max_tokens: defaultParameters?.max_tokens ?? 8192,
@@ -207,72 +180,6 @@ export const getAgentKitModelByDefinition = (
               ? { temperature: defaultParameters.temperature }
               : {}),
           },
-        }),
-      };
-    case "google":
-      return {
-        resolvedModel,
-        model: gemini({
-          apiKey: getProviderApiKey("google"),
-          model: resolvedModel.id,
-          ...(defaultParameters?.max_tokens !== undefined ||
-          defaultParameters?.temperature !== undefined
-            ? {
-                defaultParameters: {
-                  generationConfig: {
-                    ...(defaultParameters?.max_tokens !== undefined
-                      ? { maxOutputTokens: defaultParameters.max_tokens }
-                      : {}),
-                    ...(defaultParameters?.temperature !== undefined
-                      ? { temperature: defaultParameters.temperature }
-                      : {}),
-                  },
-                },
-              }
-            : {}),
-        }),
-      };
-    case "openai":
-      return {
-        resolvedModel,
-        model: agentOpenAI({
-          apiKey: getProviderApiKey("openai"),
-          model: resolvedModel.id,
-          ...(defaultParameters?.max_tokens !== undefined ||
-          defaultParameters?.temperature !== undefined
-            ? {
-                defaultParameters: {
-                  ...(defaultParameters?.max_tokens !== undefined
-                    ? { max_completion_tokens: defaultParameters.max_tokens }
-                    : {}),
-                  ...(defaultParameters?.temperature !== undefined
-                    ? { temperature: defaultParameters.temperature }
-                    : {}),
-                },
-              }
-            : {}),
-        }),
-      };
-    case "groq":
-      return {
-        resolvedModel,
-        model: agentOpenAI({
-          apiKey: getProviderApiKey("groq"),
-          baseUrl: "https://api.groq.com/openai/v1",
-          model: resolvedModel.id,
-          ...(defaultParameters?.max_tokens !== undefined ||
-          defaultParameters?.temperature !== undefined
-            ? {
-                defaultParameters: {
-                  ...(defaultParameters?.max_tokens !== undefined
-                    ? { max_completion_tokens: defaultParameters.max_tokens }
-                    : {}),
-                  ...(defaultParameters?.temperature !== undefined
-                    ? { temperature: defaultParameters.temperature }
-                    : {}),
-                },
-              }
-            : {}),
         }),
       };
     case "xai":

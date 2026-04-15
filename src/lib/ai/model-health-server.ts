@@ -7,10 +7,11 @@ import {
   type AIModelId,
 } from "./model-catalog";
 import { type AIModelHealth, type AIModelHealthStatus } from "./model-health";
-import { getProviderApiKey } from "./provider-env";
+import { getProviderApiKey, getProviderBaseUrl } from "./provider-env";
 
 const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_DETAIL_LENGTH = 240;
+const HEALTH_PROBE_TIMEOUT_MS = 15_000;
 
 const healthCache = new Map<AIModelId, AIModelHealth>();
 
@@ -26,14 +27,8 @@ const trimDetail = (detail?: string | null) => {
 
 const getConfiguredKey = (model: AIModelDefinition) => {
   switch (model.provider) {
-    case "anthropic":
-      return getProviderApiKey("anthropic");
-    case "google":
-      return getProviderApiKey("google");
-    case "openai":
-      return getProviderApiKey("openai");
-    case "groq":
-      return getProviderApiKey("groq");
+    case "openrouter":
+      return getProviderApiKey("openrouter");
     case "xai":
       return getProviderApiKey("xai");
   }
@@ -107,6 +102,7 @@ const inferHealthStatus = ({
 
 const probeModel = async (model: AIModelDefinition): Promise<AIModelHealth> => {
   const apiKey = getConfiguredKey(model);
+  const signal = AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS);
 
   if (!apiKey) {
     return {
@@ -120,8 +116,8 @@ const probeModel = async (model: AIModelDefinition): Promise<AIModelHealth> => {
   let response: Response;
 
   switch (model.provider) {
-    case "anthropic":
-      response = await fetch("https://api.anthropic.com/v1/messages", {
+    case "openrouter":
+      response = await fetch(`${getProviderBaseUrl("openrouter")}/v1/messages`, {
         body: JSON.stringify({
           max_tokens: 16,
           messages: [{ role: "user", content: "Say ok" }],
@@ -133,48 +129,7 @@ const probeModel = async (model: AIModelDefinition): Promise<AIModelHealth> => {
           "x-api-key": apiKey,
         },
         method: "POST",
-      });
-      break;
-    case "google":
-      response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${apiKey}`,
-        {
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: "Say ok" }] }],
-          }),
-          headers: {
-            "content-type": "application/json",
-          },
-          method: "POST",
-        },
-      );
-      break;
-    case "openai":
-      response = await fetch("https://api.openai.com/v1/responses", {
-        body: JSON.stringify({
-          input: "Say ok",
-          max_output_tokens: 16,
-          model: model.id,
-        }),
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-        },
-        method: "POST",
-      });
-      break;
-    case "groq":
-      response = await fetch("https://api.groq.com/openai/v1/responses", {
-        body: JSON.stringify({
-          input: "Say ok",
-          max_output_tokens: 16,
-          model: model.id,
-        }),
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-        },
-        method: "POST",
+        signal,
       });
       break;
     case "xai":
@@ -189,6 +144,7 @@ const probeModel = async (model: AIModelDefinition): Promise<AIModelHealth> => {
           "content-type": "application/json",
         },
         method: "POST",
+        signal,
       });
       break;
   }

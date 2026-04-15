@@ -40,7 +40,6 @@ import {
 } from "../hooks/use-conversations";
 import {
   getSelectedModelId,
-  useModelStore,
 } from "@/features/ai/store/use-model-store";
 
 import { Id } from "@/lib/data/app-types";
