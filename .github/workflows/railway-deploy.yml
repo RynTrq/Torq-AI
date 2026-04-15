@@ -37,6 +37,7 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           npx @railway/cli up . \
+            --detach \
             --path-as-root \
             --ci \
             --project af129a24-936c-4716-9c24-9f0d44cc29ab \
