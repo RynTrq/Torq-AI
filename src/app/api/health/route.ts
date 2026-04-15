@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { getProviderEnvKeys } from "@/lib/ai/provider-env";
+
 const requiredEnvKeys = [
   "DATABASE_URL",
   "AUTH_SECRET",
@@ -8,13 +10,15 @@ const requiredEnvKeys = [
   "INNGEST_SIGNING_KEY",
 ] as const;
 
-const aiProviderEnvKeys = [
-  "ANTHROPIC_API_KEY",
-  "GOOGLE_GENERATIVE_AI_API_KEY",
-  "GEMINI_API_KEY",
-  "OPENAI_API_KEY",
-  "GROQ_API_KEY",
-  "XAI_API_KEY",
+const aiProviderChecks = [
+  {
+    label: "openrouter",
+    envKeys: getProviderEnvKeys("openrouter"),
+  },
+  {
+    label: "xai",
+    envKeys: getProviderEnvKeys("xai"),
+  },
 ] as const;
 
 const optionalIntegrationEnvKeys = [
@@ -27,9 +31,9 @@ const optionalIntegrationEnvKeys = [
 
 export async function GET() {
   const missing = requiredEnvKeys.filter((key) => !process.env[key]?.trim());
-  const configuredAiProviders = aiProviderEnvKeys.filter((key) =>
-    Boolean(process.env[key]?.trim()),
-  );
+  const configuredAiProviders = aiProviderChecks
+    .filter(({ envKeys }) => envKeys.some((key) => Boolean(process.env[key]?.trim())))
+    .map(({ label }) => label);
   const optionalMissing = optionalIntegrationEnvKeys.filter(
     (key) => !process.env[key]?.trim(),
   );
