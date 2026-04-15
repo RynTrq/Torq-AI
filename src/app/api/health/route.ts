@@ -16,6 +16,10 @@ const aiProviderChecks = [
     envKeys: getProviderEnvKeys("openrouter"),
   },
   {
+    label: "groq",
+    envKeys: getProviderEnvKeys("groq"),
+  },
+  {
     label: "xai",
     envKeys: getProviderEnvKeys("xai"),
   },

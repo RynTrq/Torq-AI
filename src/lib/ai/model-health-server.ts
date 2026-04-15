@@ -29,6 +29,8 @@ const getConfiguredKey = (model: AIModelDefinition) => {
   switch (model.provider) {
     case "openrouter":
       return getProviderApiKey("openrouter");
+    case "groq":
+      return getProviderApiKey("groq");
     case "xai":
       return getProviderApiKey("xai");
   }
@@ -127,6 +129,21 @@ const probeModel = async (model: AIModelDefinition): Promise<AIModelHealth> => {
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
           "x-api-key": apiKey,
+        },
+        method: "POST",
+        signal,
+      });
+      break;
+    case "groq":
+      response = await fetch("https://api.groq.com/openai/v1/responses", {
+        body: JSON.stringify({
+          input: "Say ok",
+          max_output_tokens: 16,
+          model: model.id,
+        }),
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json",
         },
         method: "POST",
         signal,

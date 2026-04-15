@@ -25,13 +25,27 @@ export const AI_MODEL_IDS = [
   "google/gemma-3n-e2b-it:free",
   "google/gemma-3-12b-it:free",
   "meta-llama/llama-guard-4-12b:free",
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-safeguard-20b",
+  "openai/gpt-oss-20b",
+  "llama-3.1-8b-instant",
+  "meta-llama/llama-4-scout-17b-16e-instruct",
+  "groq/compound-mini",
+  "qwen/qwen3-32b",
+  "moonshotai/kimi-k2-instruct-0905",
+  "allam-2-7b",
+  "moonshotai/kimi-k2-instruct",
+  "groq/compound",
+  "llama-3.3-70b-versatile",
+  "canopylabs/orpheus-v1-english",
+  "canopylabs/orpheus-arabic-saudi",
   "grok-4",
   "grok-4.20-reasoning",
   "grok-3-mini",
 ] as const;
 
 export type AIModelId = (typeof AI_MODEL_IDS)[number];
-export type AIProvider = "openrouter" | "xai";
+export type AIProvider = "openrouter" | "groq" | "xai";
 
 export interface AIModelDefinition {
   id: AIModelId;
@@ -199,6 +213,90 @@ export const AI_MODELS: Record<AIModelId, AIModelDefinition> = {
     provider: "openrouter",
     tagline: "Safety-oriented model exposed in the catalog per requested provider set.",
   },
+  "openai/gpt-oss-120b": {
+    id: "openai/gpt-oss-120b",
+    label: "Groq GPT-OSS 120B",
+    provider: "groq",
+    tagline: "Large open model on Groq for fast high-context generation.",
+  },
+  "openai/gpt-oss-safeguard-20b": {
+    id: "openai/gpt-oss-safeguard-20b",
+    label: "Groq GPT-OSS Safeguard 20B",
+    provider: "groq",
+    tagline: "Groq-hosted safeguard model for policy-oriented checks and gating.",
+  },
+  "openai/gpt-oss-20b": {
+    id: "openai/gpt-oss-20b",
+    label: "Groq GPT-OSS 20B",
+    provider: "groq",
+    tagline: "Smaller GPT-OSS model on Groq for lower-latency interaction.",
+  },
+  "llama-3.1-8b-instant": {
+    id: "llama-3.1-8b-instant",
+    label: "Groq Llama 3.1 8B Instant",
+    provider: "groq",
+    tagline: "Fast low-latency general model for quick edits and chat.",
+  },
+  "meta-llama/llama-4-scout-17b-16e-instruct": {
+    id: "meta-llama/llama-4-scout-17b-16e-instruct",
+    label: "Groq Llama 4 Scout 17B",
+    provider: "groq",
+    tagline: "Groq-hosted Llama 4 Scout for broad instruct workloads.",
+  },
+  "groq/compound-mini": {
+    id: "groq/compound-mini",
+    label: "Groq Compound Mini",
+    provider: "groq",
+    tagline: "Groq-native compact compound model for fast responses.",
+  },
+  "qwen/qwen3-32b": {
+    id: "qwen/qwen3-32b",
+    label: "Groq Qwen3 32B",
+    provider: "groq",
+    tagline: "Strong Groq-hosted Qwen model for reasoning and coding.",
+  },
+  "moonshotai/kimi-k2-instruct-0905": {
+    id: "moonshotai/kimi-k2-instruct-0905",
+    label: "Groq Kimi K2 Instruct 0905",
+    provider: "groq",
+    tagline: "Recent Kimi instruct release available through Groq.",
+  },
+  "allam-2-7b": {
+    id: "allam-2-7b",
+    label: "Groq Allam 2 7B",
+    provider: "groq",
+    tagline: "Arabic-capable compact model hosted on Groq.",
+  },
+  "moonshotai/kimi-k2-instruct": {
+    id: "moonshotai/kimi-k2-instruct",
+    label: "Groq Kimi K2 Instruct",
+    provider: "groq",
+    tagline: "Groq-hosted Kimi instruct model for long-context work.",
+  },
+  "groq/compound": {
+    id: "groq/compound",
+    label: "Groq Compound",
+    provider: "groq",
+    tagline: "Groq-native compound model for heavier reasoning tasks.",
+  },
+  "llama-3.3-70b-versatile": {
+    id: "llama-3.3-70b-versatile",
+    label: "Groq Llama 3.3 70B Versatile",
+    provider: "groq",
+    tagline: "Large fast Groq-hosted Meta model for general generation.",
+  },
+  "canopylabs/orpheus-v1-english": {
+    id: "canopylabs/orpheus-v1-english",
+    label: "Groq Orpheus V1 English",
+    provider: "groq",
+    tagline: "Canopy Labs English model currently exposed on Groq.",
+  },
+  "canopylabs/orpheus-arabic-saudi": {
+    id: "canopylabs/orpheus-arabic-saudi",
+    label: "Groq Orpheus Arabic Saudi",
+    provider: "groq",
+    tagline: "Canopy Labs Arabic Saudi model currently exposed on Groq.",
+  },
   "grok-4": {
     id: "grok-4",
     label: "Grok 4",
@@ -221,10 +319,11 @@ export const AI_MODELS: Record<AIModelId, AIModelDefinition> = {
 
 export const AI_PROVIDER_LABELS: Record<AIProvider, string> = {
   openrouter: "OpenRouter",
+  groq: "Groq",
   xai: "xAI",
 };
 
-export const AI_PROVIDER_ORDER: AIProvider[] = ["openrouter", "xai"];
+export const AI_PROVIDER_ORDER: AIProvider[] = ["openrouter", "groq", "xai"];
 
 export const isAIModelId = (value: string): value is AIModelId =>
   AI_MODEL_IDS.includes(value as AIModelId);

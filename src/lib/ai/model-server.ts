@@ -1,8 +1,13 @@
 import "server-only";
 
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
-import { anthropic as agentAnthropic, grok } from "@inngest/agent-kit";
+import {
+  anthropic as agentAnthropic,
+  grok,
+  openai as agentOpenAI,
+} from "@inngest/agent-kit";
 
 import {
   AI_MODELS,
@@ -73,7 +78,7 @@ export const getCandidateAIModels = (
 };
 
 const getNoProviderConfiguredError = () =>
-  `No AI provider is configured. Add ${getProviderEnvKeys("openrouter").join(" or ")} or ${getProviderEnvKeys("xai")[0]}.`;
+  `No AI provider is configured. Add ${getProviderEnvKeys("openrouter").join(" or ")}, ${getProviderEnvKeys("groq")[0]}, or ${getProviderEnvKeys("xai")[0]}.`;
 
 export const resolveAIModel = (
   requestedModelId?: string | null,
@@ -131,6 +136,11 @@ const openRouterProvider = createAnthropic({
   name: "openrouter.messages",
 });
 
+const groqProvider = createOpenAI({
+  apiKey: getProviderApiKey("groq"),
+  baseURL: "https://api.groq.com/openai/v1",
+});
+
 const xaiProvider = createXai({
   apiKey: getProviderApiKey("xai"),
 });
@@ -141,6 +151,11 @@ export const getSdkModelByDefinition = (resolvedModel: AIModelDefinition) => {
       return {
         resolvedModel,
         model: openRouterProvider(resolvedModel.id),
+      };
+    case "groq":
+      return {
+        resolvedModel,
+        model: groqProvider(resolvedModel.id),
       };
     case "xai":
       return {
@@ -180,6 +195,28 @@ export const getAgentKitModelByDefinition = (
               ? { temperature: defaultParameters.temperature }
               : {}),
           },
+        }),
+      };
+    case "groq":
+      return {
+        resolvedModel,
+        model: agentOpenAI({
+          apiKey: getProviderApiKey("groq"),
+          baseUrl: "https://api.groq.com/openai/v1",
+          model: resolvedModel.id,
+          ...(defaultParameters?.max_tokens !== undefined ||
+          defaultParameters?.temperature !== undefined
+            ? {
+                defaultParameters: {
+                  ...(defaultParameters?.max_tokens !== undefined
+                    ? { max_completion_tokens: defaultParameters.max_tokens }
+                    : {}),
+                  ...(defaultParameters?.temperature !== undefined
+                    ? { temperature: defaultParameters.temperature }
+                    : {}),
+                },
+              }
+            : {}),
         }),
       };
     case "xai":

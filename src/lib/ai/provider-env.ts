@@ -8,6 +8,7 @@ const PROVIDER_KEY_ENV_ALIASES: Record<AIProvider, string[]> = {
     "OPENROUTER_API_KEY",
     "ANTHROPIC_API_KEY",
   ],
+  groq: ["GROQ_API_KEY"],
   xai: ["XAI_API_KEY"],
 };
 
