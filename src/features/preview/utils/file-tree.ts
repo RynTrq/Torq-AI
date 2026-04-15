@@ -1,6 +1,10 @@
 import { FileSystemTree } from "@webcontainer/api";
 
 import { Doc, Id } from "@/lib/data/app-types";
+import {
+  buildProjectFilePathMaps,
+  getProjectPathParts,
+} from "@/lib/project-file-paths";
 
 type FileDoc = Doc<"files">;
 
@@ -9,24 +13,10 @@ type FileDoc = Doc<"files">;
  */
 export const buildFileTree = (files: FileDoc[]): FileSystemTree => {
   const tree: FileSystemTree = {};
-  const filesMap = new Map(files.map((f) => [f._id, f]));
-
-  const getPath = (file: FileDoc): string[] => {
-    const parts: string[] = [file.name];
-    let parentId = file.parentId;
-
-    while (parentId) {
-      const parent = filesMap.get(parentId);
-      if (!parent) break;
-      parts.unshift(parent.name);
-      parentId = parent.parentId;
-    };
-
-    return parts;
-  };
+  const { filesById } = buildProjectFilePathMaps(files);
 
   for (const file of files) {
-    const pathParts = getPath(file);
+    const pathParts = getProjectPathParts(file, filesById);
     let current = tree;
 
     for (let i = 0; i < pathParts.length; i++) {
@@ -61,15 +51,5 @@ export const getFilePath = (
   file: FileDoc,
   filesMap: Map<Id<"files">, FileDoc>
 ): string => {
-  const parts: string[] = [file.name];
-  let parentId = file.parentId;
-
-  while (parentId) {
-    const parent = filesMap.get(parentId);
-    if (!parent) break;
-    parts.unshift(parent.name);
-    parentId = parent.parentId;
-  }
-
-  return parts.join("/");
+  return getProjectPathParts(file, filesMap).join("/");
 };

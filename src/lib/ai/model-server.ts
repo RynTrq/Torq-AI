@@ -3,9 +3,11 @@ import "server-only";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createXai } from "@ai-sdk/xai";
 import {
   anthropic as agentAnthropic,
   gemini,
+  grok,
   openai as agentOpenAI,
 } from "@inngest/agent-kit";
 
@@ -84,7 +86,7 @@ export const resolveAIModel = (requestedModelId?: string | null): AIModelDefinit
   }
 
   throw new Error(
-    `No AI provider is configured. Add ${getProviderEnvKeys("anthropic")[0]}, ${getProviderEnvKeys("google").join(" or ")}, or ${getProviderEnvKeys("openai")[0]}.`,
+    `No AI provider is configured. Add ${getProviderEnvKeys("anthropic")[0]}, ${getProviderEnvKeys("google").join(" or ")}, ${getProviderEnvKeys("openai")[0]}, or ${getProviderEnvKeys("xai")[0]}.`,
   );
 };
 
@@ -121,7 +123,7 @@ export const resolveHealthyAIModel = async (
   }
 
   throw new Error(
-    `No AI provider is configured. Add ${getProviderEnvKeys("anthropic")[0]}, ${getProviderEnvKeys("google").join(" or ")}, or ${getProviderEnvKeys("openai")[0]}.`,
+    `No AI provider is configured. Add ${getProviderEnvKeys("anthropic")[0]}, ${getProviderEnvKeys("google").join(" or ")}, ${getProviderEnvKeys("openai")[0]}, or ${getProviderEnvKeys("xai")[0]}.`,
   );
 };
 
@@ -135,6 +137,10 @@ const googleProvider = createGoogleGenerativeAI({
 
 const openAIProvider = createOpenAI({
   apiKey: getProviderApiKey("openai"),
+});
+
+const xaiProvider = createXai({
+  apiKey: getProviderApiKey("xai"),
 });
 
 export const getSdkModelByDefinition = (resolvedModel: AIModelDefinition) => {
@@ -153,6 +159,11 @@ export const getSdkModelByDefinition = (resolvedModel: AIModelDefinition) => {
       return {
         resolvedModel,
         model: openAIProvider(resolvedModel.id),
+      };
+    case "xai":
+      return {
+        resolvedModel,
+        model: xaiProvider(resolvedModel.id),
       };
   }
 };
@@ -223,6 +234,27 @@ export const getAgentKitModelByDefinition = (
                 defaultParameters: {
                   ...(defaultParameters?.max_tokens !== undefined
                     ? { max_completion_tokens: defaultParameters.max_tokens }
+                    : {}),
+                  ...(defaultParameters?.temperature !== undefined
+                    ? { temperature: defaultParameters.temperature }
+                    : {}),
+                },
+              }
+            : {}),
+        }),
+      };
+    case "xai":
+      return {
+        resolvedModel,
+        model: grok({
+          apiKey: getProviderApiKey("xai"),
+          model: resolvedModel.id,
+          ...(defaultParameters?.max_tokens !== undefined ||
+          defaultParameters?.temperature !== undefined
+            ? {
+                defaultParameters: {
+                  ...(defaultParameters?.max_tokens !== undefined
+                    ? { max_tokens: defaultParameters.max_tokens }
                     : {}),
                   ...(defaultParameters?.temperature !== undefined
                     ? { temperature: defaultParameters.temperature }

@@ -1,5 +1,6 @@
 import { Octokit } from "octokit";
 import { isBinaryFile } from "isbinaryfile";
+import { NonRetriableError } from "inngest";
 
 import { inngest } from "@/inngest/client";
 import {
@@ -105,7 +106,9 @@ export const importGithubRepo = inngest.createFunction(
       (item) => item.type === "blob" && item.path && item.sha,
     );
 
-    await step.run("create-files", async () => {
+    const importFailures = await step.run("create-files", async () => {
+      const failures: string[] = [];
+
       for (const file of allFiles) {
         if (!file.path || !file.sha) {
           continue;
@@ -145,10 +148,21 @@ export const importGithubRepo = inngest.createFunction(
             });
           }
         } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unknown import error";
+          failures.push(`${file.path}: ${message}`);
           console.error(`Failed to import file: ${file.path}`, error);
         }
       }
+
+      return failures;
     });
+
+    if (importFailures.length > 0) {
+      throw new NonRetriableError(
+        `Imported with ${importFailures.length} file error(s): ${importFailures.slice(0, 5).join("; ")}`,
+      );
+    }
 
     await step.run("set-completed-status", async () => {
       await updateProjectImportStatus({

@@ -5,10 +5,13 @@ export const AI_MODEL_IDS = [
   "gemini-2.5-pro",
   "gpt-5-mini",
   "gpt-5.2",
+  "grok-4",
+  "grok-4.20-reasoning",
+  "grok-3-mini",
 ] as const;
 
 export type AIModelId = (typeof AI_MODEL_IDS)[number];
-export type AIProvider = "anthropic" | "google" | "openai";
+export type AIProvider = "anthropic" | "google" | "openai" | "xai";
 
 export interface AIModelDefinition {
   id: AIModelId;
@@ -56,18 +59,38 @@ export const AI_MODELS: Record<AIModelId, AIModelDefinition> = {
     provider: "openai",
     tagline: "OpenAI’s flagship model for complex coding work.",
   },
+  "grok-4": {
+    id: "grok-4",
+    label: "Grok 4",
+    provider: "xai",
+    tagline: "xAI’s general flagship model for strong reasoning and generation.",
+  },
+  "grok-4.20-reasoning": {
+    id: "grok-4.20-reasoning",
+    label: "Grok 4.20 Reasoning",
+    provider: "xai",
+    tagline: "xAI’s coding-oriented reasoning model for heavier engineering tasks.",
+  },
+  "grok-3-mini": {
+    id: "grok-3-mini",
+    label: "Grok 3 Mini",
+    provider: "xai",
+    tagline: "Lower-latency Grok option for lighter edits and fast iteration.",
+  },
 };
 
 export const AI_PROVIDER_LABELS: Record<AIProvider, string> = {
   anthropic: "Anthropic",
   google: "Google",
   openai: "OpenAI",
+  xai: "xAI",
 };
 
 export const AI_PROVIDER_ORDER: AIProvider[] = [
   "anthropic",
   "google",
   "openai",
+  "xai",
 ];
 
 export const isAIModelId = (value: string): value is AIModelId =>

@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import type { ProjectFileRecord } from "@/lib/data/types";
+import { buildProjectFilePathMaps } from "@/lib/project-file-paths";
 
 export type ProjectFileWithUrl = ProjectFileRecord;
 
@@ -14,38 +15,8 @@ export interface MaterializedProjectWorkspace {
   filePathsById: Map<string, string>;
 }
 
-const getRelativePath = (
-  file: ProjectFileWithUrl,
-  filesMap: Map<string, ProjectFileWithUrl>,
-) => {
-  const parts = [file.name];
-  let parentId = file.parentId;
-
-  while (parentId) {
-    const parent = filesMap.get(parentId);
-    if (!parent) {
-      break;
-    }
-
-    parts.unshift(parent.name);
-    parentId = parent.parentId;
-  }
-
-  return parts.join("/");
-};
-
 export const buildProjectFileMaps = (files: ProjectFileWithUrl[]) => {
-  const filesMap = new Map<string, ProjectFileWithUrl>();
-  const filesByPath = new Map<string, ProjectFileWithUrl>();
-  const filePathsById = new Map<string, string>();
-
-  files.forEach((file) => filesMap.set(file._id, file));
-
-  for (const file of files) {
-    const relativePath = getRelativePath(file, filesMap);
-    filesByPath.set(relativePath, file);
-    filePathsById.set(file._id, relativePath);
-  }
+  const { filesByPath, filePathsById } = buildProjectFilePathMaps(files);
 
   return { filesByPath, filePathsById };
 };

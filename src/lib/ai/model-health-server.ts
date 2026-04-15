@@ -32,6 +32,8 @@ const getConfiguredKey = (model: AIModelDefinition) => {
       return getProviderApiKey("google");
     case "openai":
       return getProviderApiKey("openai");
+    case "xai":
+      return getProviderApiKey("xai");
   }
 };
 
@@ -143,6 +145,20 @@ const probeModel = async (model: AIModelDefinition): Promise<AIModelHealth> => {
       break;
     case "openai":
       response = await fetch("https://api.openai.com/v1/responses", {
+        body: JSON.stringify({
+          input: "Say ok",
+          max_output_tokens: 16,
+          model: model.id,
+        }),
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json",
+        },
+        method: "POST",
+      });
+      break;
+    case "xai":
+      response = await fetch("https://api.x.ai/v1/responses", {
         body: JSON.stringify({
           input: "Say ok",
           max_output_tokens: 16,

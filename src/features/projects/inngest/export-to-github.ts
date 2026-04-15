@@ -5,6 +5,7 @@ import { NonRetriableError } from "inngest";
 import { inngest } from "@/inngest/client";
 import { listProjectFiles, updateProjectExportStatus } from "@/lib/data/server";
 import type { ProjectFileRecord } from "@/lib/data/types";
+import { buildProjectFilePathMaps } from "@/lib/project-file-paths";
 
 interface ExportToGithubEvent {
   projectId: string;
@@ -106,34 +107,8 @@ export const exportToGithub = inngest.createFunction(
       return await listProjectFiles(projectId);
     }) as FileWithUrl[];
 
-    const buildFilePaths = (projectFiles: FileWithUrl[]) => {
-      const fileMap = new Map<string, FileWithUrl>();
-      projectFiles.forEach((file) => fileMap.set(file._id, file));
-
-      const getFullPath = (file: FileWithUrl): string => {
-        if (!file.parentId) {
-          return file.name;
-        }
-
-        const parent = fileMap.get(file.parentId);
-
-        if (!parent) {
-          return file.name;
-        }
-
-        return `${getFullPath(parent)}/${file.name}`;
-      };
-
-      const paths: Record<string, FileWithUrl> = {};
-      projectFiles.forEach((file) => {
-        paths[getFullPath(file)] = file;
-      });
-
-      return paths;
-    };
-
-    const filePaths = buildFilePaths(files);
-    const fileEntries = Object.entries(filePaths).filter(
+    const { filesByPath } = buildProjectFilePathMaps(files);
+    const fileEntries = [...filesByPath.entries()].filter(
       ([, file]) => file.type === "file",
     );
 

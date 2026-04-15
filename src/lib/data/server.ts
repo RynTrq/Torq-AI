@@ -17,6 +17,7 @@ import type {
   ProjectRecord,
   ProjectSettings,
 } from "@/lib/data/types";
+import { normalizeProjectPathSegment } from "@/lib/project-file-paths";
 
 const serializeProject = (project: {
   id: string;
@@ -385,13 +386,11 @@ const ensureProjectFileNameAvailable = async ({
   projectId,
   parentId,
   name,
-  kind,
   excludeId,
 }: {
   projectId: string;
   parentId?: string;
   name: string;
-  kind: FileKind;
   excludeId?: string;
 }) => {
   const sibling = await prisma.projectFile.findFirst({
@@ -399,7 +398,6 @@ const ensureProjectFileNameAvailable = async ({
       projectId,
       parentId: parentId ?? null,
       name,
-      kind,
       ...(excludeId
         ? {
             NOT: { id: excludeId },
@@ -409,10 +407,35 @@ const ensureProjectFileNameAvailable = async ({
   });
 
   if (sibling) {
-    throw new Error(
-      `${kind === "FOLDER" ? "Folder" : "File"} already exists in this location`,
-    );
+    throw new Error("Project item already exists in this location");
   }
+};
+
+const resolveParentFolder = async ({
+  projectId,
+  parentId,
+}: {
+  projectId: string;
+  parentId?: string;
+}) => {
+  if (!parentId) {
+    return undefined;
+  }
+
+  const parent = await prisma.projectFile.findUnique({
+    where: { id: parentId },
+    select: { id: true, kind: true, projectId: true },
+  });
+
+  if (!parent || parent.projectId !== projectId) {
+    throw new Error("Parent folder not found");
+  }
+
+  if (parent.kind !== "FOLDER") {
+    throw new Error("Parent item must be a folder");
+  }
+
+  return parent.id;
 };
 
 export const createFile = async ({
@@ -426,18 +449,20 @@ export const createFile = async ({
   name: string;
   content: string;
 }) => {
+  const normalizedName = normalizeProjectPathSegment(name);
+  const resolvedParentId = await resolveParentFolder({ projectId, parentId });
+
   await ensureProjectFileNameAvailable({
     projectId,
-    parentId,
-    name,
-    kind: "FILE",
+    parentId: resolvedParentId,
+    name: normalizedName,
   });
 
   const file = await prisma.projectFile.create({
     data: {
       projectId,
-      parentId: parentId ?? null,
-      name,
+      parentId: resolvedParentId ?? null,
+      name: normalizedName,
       kind: "FILE",
       content,
     },
@@ -493,18 +518,20 @@ export const createFolder = async ({
   parentId?: string;
   name: string;
 }) => {
+  const normalizedName = normalizeProjectPathSegment(name);
+  const resolvedParentId = await resolveParentFolder({ projectId, parentId });
+
   await ensureProjectFileNameAvailable({
     projectId,
-    parentId,
-    name,
-    kind: "FOLDER",
+    parentId: resolvedParentId,
+    name: normalizedName,
   });
 
   const folder = await prisma.projectFile.create({
     data: {
       projectId,
-      parentId: parentId ?? null,
-      name,
+      parentId: resolvedParentId ?? null,
+      name: normalizedName,
       kind: "FOLDER",
     },
   });
@@ -527,18 +554,20 @@ export const createBinaryFile = async ({
   dataUrl: string;
   mimeType?: string;
 }) => {
+  const normalizedName = normalizeProjectPathSegment(name);
+  const resolvedParentId = await resolveParentFolder({ projectId, parentId });
+
   await ensureProjectFileNameAvailable({
     projectId,
-    parentId,
-    name,
-    kind: "FILE",
+    parentId: resolvedParentId,
+    name: normalizedName,
   });
 
   const file = await prisma.projectFile.create({
     data: {
       projectId,
-      parentId: parentId ?? null,
-      name,
+      parentId: resolvedParentId ?? null,
+      name: normalizedName,
       kind: "FILE",
       storagePath: dataUrl,
       mimeType,
@@ -563,6 +592,14 @@ export const updateFileContent = async ({
 
   if (!existing) {
     throw new Error("File not found");
+  }
+
+  if (existing.kind !== "FILE") {
+    throw new Error("Folders cannot be edited as files");
+  }
+
+  if (existing.storagePath) {
+    throw new Error("Binary files cannot be edited as text");
   }
 
   const file = await prisma.projectFile.update({
@@ -592,18 +629,19 @@ export const renameFile = async ({
     throw new Error("File not found");
   }
 
+  const normalizedName = normalizeProjectPathSegment(newName);
+
   await ensureProjectFileNameAvailable({
     projectId: existing.projectId,
     parentId: existing.parentId ?? undefined,
-    name: newName,
-    kind: existing.kind,
+    name: normalizedName,
     excludeId: existing.id,
   });
 
   const file = await prisma.projectFile.update({
     where: { id: fileId },
     data: {
-      name: newName,
+      name: normalizedName,
     },
   });
 

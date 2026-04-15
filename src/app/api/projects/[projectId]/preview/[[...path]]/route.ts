@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireOwnedProject } from "@/lib/data/authz";
 import { listProjectFiles } from "@/lib/data/server";
 import { getMimeType } from "@/lib/project-files";
+import { buildProjectFilePathMaps } from "@/lib/project-file-paths";
 
 export const runtime = "nodejs";
 
@@ -28,29 +29,10 @@ export async function GET(
 
   const files = await listProjectFiles(projectId);
   const requestedPath = path.join("/");
+  const { filesByPath } = buildProjectFilePathMaps(files);
+  const file = filesByPath.get(requestedPath);
 
-  const file = files.find((candidate) => {
-    if (candidate.type !== "file") {
-      return false;
-    }
-
-    const parts = [candidate.name];
-    let parentId = candidate.parentId;
-
-    while (parentId) {
-      const parent = files.find((item) => item._id === parentId);
-      if (!parent) {
-        break;
-      }
-
-      parts.unshift(parent.name);
-      parentId = parent.parentId;
-    }
-
-    return parts.join("/") === requestedPath;
-  });
-
-  if (!file) {
+  if (!file || file.type !== "file") {
     return NextResponse.json({ error: "File not found" }, { status: 404 });
   }
 

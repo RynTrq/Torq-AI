@@ -47,6 +47,19 @@ export async function POST(request: Request) {
   try {
     await requireUser();
 
+    const requestSchema = z.object({
+      code: z.string().min(1, "Code is required"),
+      currentLine: z.string(),
+      fileName: z.string().default(""),
+      lineNumber: z.number().int().nonnegative(),
+      modelId: z.string().optional().nullable(),
+      nextLines: z.string().optional().default(""),
+      previousLines: z.string().optional().default(""),
+      textAfterCursor: z.string().default(""),
+      textBeforeCursor: z.string().default(""),
+    });
+
+    const body = await request.json();
     const {
       fileName,
       code,
@@ -57,14 +70,7 @@ export async function POST(request: Request) {
       nextLines,
       lineNumber,
       modelId,
-    } = await request.json();
-
-    if (!code) {
-      return NextResponse.json(
-        { error: "Code is required" },
-        { status: 400 },
-      );
-    }
+    } = requestSchema.parse(body);
 
     const healthyModels = await getHealthyCandidateAIModels(modelId);
 
@@ -96,6 +102,13 @@ export async function POST(request: Request) {
 
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: error.issues[0]?.message ?? "Invalid request" },
+        { status: 400 },
+      );
     }
 
     if (

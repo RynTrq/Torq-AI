@@ -13,6 +13,7 @@ const aiProviderEnvKeys = [
   "GOOGLE_GENERATIVE_AI_API_KEY",
   "GEMINI_API_KEY",
   "OPENAI_API_KEY",
+  "XAI_API_KEY",
 ] as const;
 
 const optionalIntegrationEnvKeys = [

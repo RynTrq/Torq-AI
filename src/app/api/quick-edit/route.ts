@@ -6,7 +6,14 @@ import { requireUser } from "@/lib/auth";
 import { getHealthySdkModel } from "@/lib/ai/model-server";
 import { getFirecrawlClient } from "@/lib/firecrawl";
 
-const quickEditSchema = z.object({
+const quickEditRequestSchema = z.object({
+  fullCode: z.string().optional().default(""),
+  instruction: z.string().trim().min(1, "Instruction is required"),
+  modelId: z.string().optional().nullable(),
+  selectedCode: z.string().min(1, "Selected code is required"),
+});
+
+const quickEditResponseSchema = z.object({
   editedCode: z
     .string()
     .describe(
@@ -44,21 +51,9 @@ export async function POST(request: Request) {
   try {
     await requireUser();
 
-    const { selectedCode, fullCode, instruction, modelId } = await request.json();
-
-    if (!selectedCode) {
-      return NextResponse.json(
-        { error: "Selected code is required" },
-        { status: 400 },
-      );
-    }
-
-    if (!instruction) {
-      return NextResponse.json(
-        { error: "Instruction is required" },
-        { status: 400 },
-      );
-    }
+    const body = await request.json();
+    const { selectedCode, fullCode, instruction, modelId } =
+      quickEditRequestSchema.parse(body);
 
     const urls: string[] = instruction.match(URL_REGEX) || [];
     let documentationContext = "";
@@ -100,7 +95,7 @@ export async function POST(request: Request) {
 
     const { output } = await generateText({
       model,
-      output: Output.object({ schema: quickEditSchema }),
+      output: Output.object({ schema: quickEditResponseSchema }),
       prompt,
     });
 
@@ -110,6 +105,13 @@ export async function POST(request: Request) {
 
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: error.issues[0]?.message ?? "Invalid request" },
+        { status: 400 },
+      );
     }
 
     return NextResponse.json(
