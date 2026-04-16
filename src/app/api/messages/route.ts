@@ -19,6 +19,7 @@ import {
 } from "@/lib/inngest/dev-server";
 import {
   immediateMessageProcessingRunner,
+  isSimpleChatMessage,
   processMessageEvent,
 } from "@/features/conversations/inngest/process-message-core";
 
@@ -138,7 +139,10 @@ export async function POST(request: Request) {
       traceId,
     });
 
-    if (shouldCheckLocalInngestDevServer()) {
+    const shouldProcessInline =
+      shouldCheckLocalInngestDevServer() || isSimpleChatMessage(message);
+
+    if (shouldProcessInline) {
       let warning: string | undefined;
 
       try {
@@ -184,6 +188,7 @@ export async function POST(request: Request) {
         success: true,
         messageId: assistantMessageId,
         queued: false,
+        mode: "inline",
         traceId,
         warning,
       });
@@ -217,6 +222,7 @@ export async function POST(request: Request) {
         success: true,
         messageId: assistantMessageId,
         queued: false,
+        mode: "offline-worker",
         traceId,
         warning,
       });
@@ -295,6 +301,7 @@ export async function POST(request: Request) {
       success: true,
       eventId,
       messageId: assistantMessageId,
+      mode: "queued",
       queued,
       traceId,
       warning,

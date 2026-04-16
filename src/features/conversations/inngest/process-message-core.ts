@@ -119,7 +119,7 @@ const withTimeout = async <T>(
   }
 };
 
-const isSimpleChatMessage = (message: string) => {
+export const isSimpleChatMessage = (message: string) => {
   const trimmed = message.trim();
 
   return (
