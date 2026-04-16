@@ -52,26 +52,68 @@ export const getCandidateAIModels = (
     candidates.push(model);
   };
 
+  const scoreCandidate = (model: AIModelDefinition) => {
+    const searchable = `${model.id} ${model.label} ${model.tagline}`.toLowerCase();
+    let score = 0;
+
+    if (model.id === requestedModel?.id) {
+      score -= 1000;
+    }
+
+    if (model.provider === requestedModel?.provider) {
+      score -= 120;
+    }
+
+    if (model.id === DEFAULT_AI_MODEL_ID) {
+      score -= 40;
+    }
+
+    if (
+      searchable.includes("coding") ||
+      searchable.includes("general") ||
+      searchable.includes("balanced") ||
+      searchable.includes("reasoning") ||
+      searchable.includes("versatile") ||
+      searchable.includes("instruct") ||
+      searchable.includes("compound") ||
+      searchable.includes("qwen") ||
+      searchable.includes("gpt-oss") ||
+      searchable.includes("llama")
+    ) {
+      score -= 20;
+    }
+
+    if (searchable.includes("preview")) {
+      score += 10;
+    }
+
+    if (model.id.includes(":free")) {
+      score += 15;
+    }
+
+    if (
+      searchable.includes("safeguard") ||
+      searchable.includes("guard") ||
+      searchable.includes("embed") ||
+      searchable.includes("vision") ||
+      searchable.includes(" vl ") ||
+      searchable.includes("arabic") ||
+      searchable.includes("audio")
+    ) {
+      score += 120;
+    }
+
+    return score;
+  };
+
+  const orderedModels = AI_MODEL_IDS.map((modelId) => AI_MODELS[modelId]).sort(
+    (a, b) => scoreCandidate(a) - scoreCandidate(b),
+  );
+
   addCandidate(requestedModel);
 
-  for (const modelId of AI_MODEL_IDS) {
-    const model = AI_MODELS[modelId];
-    if (model.provider !== requestedModel?.provider) {
-      addCandidate(model);
-    }
-  }
-
-  addCandidate(AI_MODELS[DEFAULT_AI_MODEL_ID]);
-
-  for (const modelId of AI_MODEL_IDS) {
-    const model = AI_MODELS[modelId];
-    if (model.provider === requestedModel?.provider) {
-      addCandidate(model);
-    }
-  }
-
-  for (const modelId of AI_MODEL_IDS) {
-    addCandidate(AI_MODELS[modelId]);
+  for (const model of orderedModels) {
+    addCandidate(model);
   }
 
   return candidates;

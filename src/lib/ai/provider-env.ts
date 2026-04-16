@@ -16,6 +16,26 @@ const PROVIDER_BASE_URL_ENV_ALIASES: Partial<Record<AIProvider, string[]>> = {
   openrouter: ["ANTHROPIC_BASE_URL", "OPENROUTER_BASE_URL"],
 };
 
+const withoutTrailingSlash = (value: string) => value.replace(/\/+$/, "");
+
+const normalizeOpenRouterBaseUrl = (value: string) => {
+  const trimmed = withoutTrailingSlash(value.trim());
+
+  if (!trimmed) {
+    return "https://openrouter.ai/api/v1";
+  }
+
+  if (trimmed === "https://openrouter.ai") {
+    return "https://openrouter.ai/api/v1";
+  }
+
+  if (trimmed === "https://openrouter.ai/api") {
+    return "https://openrouter.ai/api/v1";
+  }
+
+  return trimmed;
+};
+
 export const getProviderEnvKeys = (provider: AIProvider) =>
   PROVIDER_KEY_ENV_ALIASES[provider];
 
@@ -36,9 +56,13 @@ export const getProviderBaseUrl = (provider: AIProvider) => {
     const value = process.env[envKey]?.trim();
 
     if (value) {
-      return value;
+      return provider === "openrouter"
+        ? normalizeOpenRouterBaseUrl(value)
+        : withoutTrailingSlash(value);
     }
   }
 
-  return provider === "openrouter" ? "https://openrouter.ai/api" : undefined;
+  return provider === "openrouter"
+    ? "https://openrouter.ai/api/v1"
+    : undefined;
 };

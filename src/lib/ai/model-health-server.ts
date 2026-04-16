@@ -122,7 +122,7 @@ const probeModel = async (model: AIModelDefinition): Promise<AIModelHealth> => {
 
   switch (model.provider) {
     case "openrouter":
-      response = await fetch(`${getProviderBaseUrl("openrouter")}/v1/messages`, {
+      response = await fetch(`${getProviderBaseUrl("openrouter")}/messages`, {
         body: JSON.stringify({
           max_tokens: 16,
           messages: [{ role: "user", content: "Say ok" }],
