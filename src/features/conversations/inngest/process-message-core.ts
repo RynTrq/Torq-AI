@@ -26,6 +26,10 @@ import {
   getAgentKitModelByDefinition,
   getCandidateAIModels,
 } from "@/lib/ai/model-server";
+import {
+  isSimpleChatMessage,
+  shouldUseToolNetwork,
+} from "./message-routing";
 
 export interface MessageEvent {
   messageId: string;
@@ -49,14 +53,6 @@ export const immediateMessageProcessingRunner: MessageProcessingRunner = {
 const MESSAGE_RUN_TIMEOUT_MS = 45_000;
 const MAX_REQUESTED_MODEL_ATTEMPTS = 3;
 const MAX_AUTOMATIC_MODEL_ATTEMPTS = 4;
-const SIMPLE_CHAT_MAX_LENGTH = 80;
-const SIMPLE_CHAT_REGEX =
-  /^(hi|hey|hello|yo|sup|thanks|thank you|ok|okay|cool|nice|good morning|good afternoon|good evening)[!. ]*$/i;
-const PROJECT_ACTION_REGEX =
-  /\b(create|update|edit|modify|rewrite|refactor|rename|delete|remove|read|list|open|fix|implement)\b/i;
-const PROJECT_TARGET_REGEX =
-  /\b(file|folder|project|codebase|repository|repo|src\/|\.ts\b|\.tsx\b|\.js\b|\.jsx\b|\.py\b|\.java\b|\.cpp\b|\.c\b|\.html\b|\.css\b|\.json\b|\.md\b)\b/i;
-
 const logMessageProcessing = (
   event: string,
   details: Record<string, unknown>,
@@ -118,19 +114,6 @@ const withTimeout = async <T>(
     }
   }
 };
-
-export const isSimpleChatMessage = (message: string) => {
-  const trimmed = message.trim();
-
-  return (
-    trimmed.length > 0 &&
-    trimmed.length <= SIMPLE_CHAT_MAX_LENGTH &&
-    SIMPLE_CHAT_REGEX.test(trimmed)
-  );
-};
-
-export const shouldUseToolNetwork = (message: string) =>
-  PROJECT_ACTION_REGEX.test(message) && PROJECT_TARGET_REGEX.test(message);
 
 const limitCandidateModels = (
   candidateModels: ReturnType<typeof getCandidateAIModels>,

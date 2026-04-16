@@ -14,15 +14,15 @@ import {
 } from "@/lib/data/server";
 import {
   getInngestDevCommand,
-  isLocalInngestDevServerAvailable,
-  shouldCheckLocalInngestDevServer,
 } from "@/lib/inngest/dev-server";
 import {
   immediateMessageProcessingRunner,
-  isSimpleChatMessage,
-  shouldUseToolNetwork,
   processMessageEvent,
 } from "@/features/conversations/inngest/process-message-core";
+import {
+  isSimpleChatMessage,
+  shouldUseToolNetwork,
+} from "@/features/conversations/inngest/message-routing";
 
 const requestSchema = z.object({
   conversationId: z.string(),
@@ -138,8 +138,7 @@ export async function POST(request: Request) {
 
     const useToolQueue = shouldUseToolNetwork(message);
     const simpleChat = isSimpleChatMessage(message);
-    const shouldProcessInline =
-      shouldCheckLocalInngestDevServer() || !useToolQueue;
+    const shouldProcessInline = true;
 
     logMessagesApi("execution-strategy", {
       conversationId,
@@ -221,117 +220,23 @@ export async function POST(request: Request) {
       });
     }
 
-    const localWorkerAvailable = await isLocalInngestDevServerAvailable();
-
-    if (!localWorkerAvailable) {
-      const devCommand = getInngestDevCommand();
-      const warning =
-        `Your message was saved, but the local AI worker is offline. Start \`${devCommand}\`, then send the prompt again.`;
-
-      await updateMessageContent({
-        messageId: assistantMessageId,
-        content:
-          `I saved your message, but the local AI worker is not running. Start \`${devCommand}\` in another terminal, then resend your prompt.`,
-        errorMessage: buildDebugLine({
-          traceId,
-          stage: "local-worker-unavailable",
-          detail: devCommand,
-        }),
-      });
-
-      console.warn("[torq-ai][messages-api] local-worker-unavailable", {
-        assistantMessageId,
-        conversationId,
+    const devCommand = getInngestDevCommand();
+    await updateMessageDebugInfo({
+      messageId: assistantMessageId,
+      errorMessage: buildDebugLine({
         traceId,
-      });
-
-      return NextResponse.json({
-        success: true,
-        messageId: assistantMessageId,
-        queued: false,
-        mode: "offline-worker",
-        traceId,
-        warning,
-      });
-    }
-
-    let queued = true;
-    let warning: string | undefined;
-    let eventId: string | undefined;
-
-    try {
-      await updateMessageDebugInfo({
-        messageId: assistantMessageId,
-        errorMessage: buildDebugLine({
-          traceId,
-          stage: "enqueueing-message-event",
-          detail: `Selected model ${modelId ?? "auto"}`,
-        }),
-      });
-
-      const event = await inngest.send({
-        name: "message/sent",
-        data: {
-          messageId: assistantMessageId,
-          conversationId,
-          projectId,
-          message,
-          modelId,
-          traceId,
-        },
-      });
-
-      eventId = event.ids[0];
-      await updateMessageDebugInfo({
-        messageId: assistantMessageId,
-        errorMessage: buildDebugLine({
-          traceId,
-          stage: "message-event-enqueued",
-          detail: `Event ${eventId}`,
-        }),
-      });
-      logMessagesApi("enqueued", {
-        conversationId,
-        eventId,
-        messageId: assistantMessageId,
-        modelId: modelId ?? null,
-        projectId,
-        traceId,
-      });
-    } catch (error) {
-      queued = false;
-      warning =
-        "Your message was saved, but the AI processor could not start. Try again in a moment.";
-
-      console.error("[torq-ai][messages-api] failed-to-enqueue", {
-        assistantMessageId,
-        conversationId,
-        error,
-        modelId: modelId ?? null,
-        projectId,
-        traceId,
-      });
-
-      await updateMessageContent({
-        messageId: assistantMessageId,
-        content:
-          "I saved your message, but the AI processor is unavailable right now. Please try again in a moment.",
-        errorMessage: buildDebugLine({
-          traceId,
-          stage: "enqueue-failed",
-          detail: error instanceof Error ? error.message : "Unknown enqueue failure",
-        }),
-      });
-    }
+        stage: "unexpected-routing-fallback",
+        detail: `Inline processing expected. Local dev command: ${devCommand}`,
+      }),
+    });
 
     return NextResponse.json({
       success: true,
-      eventId,
       messageId: assistantMessageId,
-      mode: "queued",
-      queued,
+      queued: false,
+      mode: "inline-fallback",
       traceId,
-      warning,
+      warning: "Message processing used the inline fallback path.",
     });
   } catch (error) {
     return toErrorResponse(error, "Unable to send message");
