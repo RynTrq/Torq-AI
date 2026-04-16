@@ -49,12 +49,43 @@ export const processMessage = inngest.createFunction(
     event: "message/sent",
   },
   async ({ event, step }) => {
-    return await processMessageEvent({
-      eventData: event.data as MessageEvent,
-      runner: {
-        run: async (name, fn) => await step.run(name, async () => await fn()),
-        sleep: async (name, duration) => await step.sleep(name, duration),
-      },
+    const eventData = event.data as MessageEvent;
+
+    console.info("[torq-ai][message] inngest-handler-start", {
+      conversationId: eventData.conversationId,
+      messageId: eventData.messageId,
+      projectId: eventData.projectId,
+      requestedModelId: eventData.modelId ?? null,
+      traceId: eventData.traceId ?? null,
     });
+
+    try {
+      const result = await processMessageEvent({
+        eventData,
+        runner: {
+          run: async (name, fn) => await step.run(name, async () => await fn()),
+          sleep: async (name, duration) => await step.sleep(name, duration),
+        },
+      });
+
+      console.info("[torq-ai][message] inngest-handler-success", {
+        conversationId: eventData.conversationId,
+        messageId: eventData.messageId,
+        projectId: eventData.projectId,
+        result,
+        traceId: eventData.traceId ?? null,
+      });
+
+      return result;
+    } catch (error) {
+      console.error("[torq-ai][message] inngest-handler-error", {
+        conversationId: eventData.conversationId,
+        error,
+        messageId: eventData.messageId,
+        projectId: eventData.projectId,
+        traceId: eventData.traceId ?? null,
+      });
+      throw error;
+    }
   }
 );

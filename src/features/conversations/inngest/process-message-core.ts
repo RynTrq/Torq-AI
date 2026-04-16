@@ -129,7 +129,7 @@ export const isSimpleChatMessage = (message: string) => {
   );
 };
 
-const shouldUseToolNetwork = (message: string) =>
+export const shouldUseToolNetwork = (message: string) =>
   PROJECT_ACTION_REGEX.test(message) && PROJECT_TARGET_REGEX.test(message);
 
 const limitCandidateModels = (
@@ -285,6 +285,14 @@ export const processMessageEvent = async ({
     runner,
     stage: "routing-resolved",
     traceId,
+  });
+
+  logMessageProcessing("candidate-models", {
+    candidateModelLabels: candidateModels.map((candidateModel) => candidateModel.label),
+    conversationId,
+    messageId,
+    projectId,
+    traceId: traceId ?? null,
   });
 
   if (candidateModels.length === 0) {
@@ -457,6 +465,14 @@ export const processMessageEvent = async ({
         });
       });
 
+      await persistDebugStage({
+        detail: `Completed with ${candidateModel.id}`,
+        messageId,
+        runner,
+        stage: "assistant-response-written",
+        traceId,
+      });
+
       logMessageProcessing("model-success", {
         assistantResponseLength: assistantResponse.length,
         conversationId,
@@ -556,6 +572,7 @@ export const processMessageEvent = async ({
   logMessageProcessing("all-models-failed", {
     attemptedModels,
     conversationId,
+    finalError: sanitizeModelError(lastError),
     messageId,
     requestedModelId: modelId ?? null,
     traceId: traceId ?? null,

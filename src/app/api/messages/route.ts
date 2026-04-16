@@ -20,6 +20,7 @@ import {
 import {
   immediateMessageProcessingRunner,
   isSimpleChatMessage,
+  shouldUseToolNetwork,
   processMessageEvent,
 } from "@/features/conversations/inngest/process-message-core";
 
@@ -46,6 +47,10 @@ const buildDebugLine = ({
     .filter(Boolean)
     .join("\n");
 
+const logMessagesApi = (event: string, details: Record<string, unknown>) => {
+  console.info(`[torq-ai][messages-api] ${event}`, details);
+};
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -66,7 +71,7 @@ export async function POST(request: Request) {
     }
 
     const projectId = conversation.projectId;
-    console.info("[torq-ai][messages-api] received", {
+    logMessagesApi("received", {
       conversationId,
       messageLength: message.length,
       modelId: modelId ?? null,
@@ -75,7 +80,7 @@ export async function POST(request: Request) {
     });
     const processingMessages = await listProcessingMessagesForConversation(conversationId);
 
-    console.info("[torq-ai][messages-api] processing-messages", {
+    logMessagesApi("processing-messages", {
       conversationId,
       count: processingMessages.length,
       messageIds: processingMessages.map((processingMessage) => processingMessage._id),
@@ -85,7 +90,7 @@ export async function POST(request: Request) {
     if (processingMessages.length > 0) {
       await Promise.all(
         processingMessages.map(async (processingMessage) => {
-          console.info("[torq-ai][messages-api] cancelling-processing-message", {
+          logMessagesApi("cancelling-processing-message", {
             conversationId,
             processingMessageId: processingMessage._id,
             traceId,
@@ -131,16 +136,34 @@ export async function POST(request: Request) {
       }),
     });
 
-    console.info("[torq-ai][messages-api] created-assistant-message", {
+    const useToolQueue = shouldUseToolNetwork(message);
+    const simpleChat = isSimpleChatMessage(message);
+    const shouldProcessInline =
+      shouldCheckLocalInngestDevServer() || !useToolQueue;
+
+    logMessagesApi("execution-strategy", {
+      conversationId,
+      messageId: assistantMessageId,
+      mode: shouldProcessInline
+        ? simpleChat
+          ? "inline-simple-chat"
+          : useToolQueue
+            ? "inline-dev"
+            : "inline-coding-chat"
+        : "queued-coding-agent",
+      projectId,
+      requestedModelId: modelId ?? null,
+      traceId,
+      usesToolNetwork: useToolQueue,
+    });
+
+    logMessagesApi("created-assistant-message", {
       assistantMessageId,
       conversationId,
       modelId: modelId ?? null,
       projectId,
       traceId,
     });
-
-    const shouldProcessInline =
-      shouldCheckLocalInngestDevServer() || isSimpleChatMessage(message);
 
     if (shouldProcessInline) {
       let warning: string | undefined;
@@ -188,7 +211,11 @@ export async function POST(request: Request) {
         success: true,
         messageId: assistantMessageId,
         queued: false,
-        mode: "inline",
+        mode: simpleChat
+          ? "inline-simple-chat"
+          : useToolQueue
+            ? "inline-dev"
+            : "inline-coding-chat",
         traceId,
         warning,
       });
@@ -263,7 +290,7 @@ export async function POST(request: Request) {
           detail: `Event ${eventId}`,
         }),
       });
-      console.info("[torq-ai][messages-api] enqueued", {
+      logMessagesApi("enqueued", {
         conversationId,
         eventId,
         messageId: assistantMessageId,
