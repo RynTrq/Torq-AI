@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { basename, join } from "node:path";
+import process from "node:process";
 
 import { z } from "zod";
 import { NextResponse } from "next/server";
@@ -14,6 +15,21 @@ import {
 } from "@/lib/server/project-workspace";
 
 export const runtime = "nodejs";
+
+const PROCESS_TIMEOUT_MS = 20_000;
+const PROCESS_KILL_GRACE_MS = 1_000;
+const MAX_OUTPUT_BYTES = 64 * 1024;
+const PASSTHROUGH_ENV_KEYS = new Set([
+  "HOME",
+  "LANG",
+  "LC_ALL",
+  "PATH",
+  "PYTHONPATH",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+  "TZ",
+]);
 
 const requestSchema = z.object({
   fileId: z.string(),
@@ -167,41 +183,88 @@ const runProcess = (spec: RunSpec) => {
     output: string;
     timedOut: boolean;
   }>((resolve, reject) => {
+    const safeEnv = {} as NodeJS.ProcessEnv;
+
+    for (const [key, value] of Object.entries(process.env)) {
+      if (PASSTHROUGH_ENV_KEYS.has(key)) {
+        safeEnv[key] = value;
+      }
+    }
+
     const child =
       spec.type === "spawn"
         ? spawn(spec.command, spec.args, {
             cwd: spec.cwd,
-            env: process.env,
+            env: safeEnv,
           })
         : spawn(spec.command, {
             cwd: spec.cwd,
-            env: process.env,
+            env: safeEnv,
             shell: true,
           });
 
     let output = "";
     let timedOut = false;
+    let outputTruncated = false;
+    let killTimer: NodeJS.Timeout | undefined;
+
+    const appendOutput = (chunk: Buffer | string) => {
+      if (outputTruncated) {
+        return;
+      }
+
+      const chunkText = chunk.toString();
+      const remainingBytes = MAX_OUTPUT_BYTES - Buffer.byteLength(output);
+
+      if (remainingBytes <= 0) {
+        outputTruncated = true;
+        output += "\n[output truncated]";
+        child.kill("SIGTERM");
+        return;
+      }
+
+      const chunkBytes = Buffer.byteLength(chunkText);
+
+      if (chunkBytes <= remainingBytes) {
+        output += chunkText;
+        return;
+      }
+
+      output += Buffer.from(chunkText).subarray(0, remainingBytes).toString("utf8");
+      output += "\n[output truncated]";
+      outputTruncated = true;
+      child.kill("SIGTERM");
+    };
 
     const timeout = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
-    }, 20_000);
+      killTimer = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, PROCESS_KILL_GRACE_MS);
+    }, PROCESS_TIMEOUT_MS);
 
     child.stdout.on("data", (chunk) => {
-      output += chunk.toString();
+      appendOutput(chunk);
     });
 
     child.stderr.on("data", (chunk) => {
-      output += chunk.toString();
+      appendOutput(chunk);
     });
 
     child.on("error", (error) => {
       clearTimeout(timeout);
+      if (killTimer) {
+        clearTimeout(killTimer);
+      }
       reject(error);
     });
 
     child.on("close", (exitCode) => {
       clearTimeout(timeout);
+      if (killTimer) {
+        clearTimeout(killTimer);
+      }
       resolve({ exitCode, output, timedOut });
     });
   });

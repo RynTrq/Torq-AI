@@ -13,6 +13,26 @@ import { Id } from "@/lib/data/app-types";
 let webcontainerInstance: WebContainer | null = null;
 let bootPromise: Promise<WebContainer> | null = null;
 
+const parseCommand = (command: string) => {
+  const parts = command.match(/"[^"]*"|'[^']*'|[^\s]+/g)?.map((part) => {
+    const quote = part[0];
+
+    if ((quote === `"` || quote === "'") && part.at(-1) === quote) {
+      return part.slice(1, -1);
+    }
+
+    return part;
+  }) ?? [];
+
+  const [bin, ...args] = parts;
+
+  if (!bin) {
+    throw new Error("Command is required");
+  }
+
+  return { bin, args };
+};
+
 const getWebContainer = async (): Promise<WebContainer> => {
   if (webcontainerInstance) {
     return webcontainerInstance;
@@ -106,7 +126,7 @@ export const useWebContainer = ({
         if (installCmd) {
           setStatus("installing");
 
-          const [installBin, ...installArgs] = installCmd.split(" ");
+          const { bin: installBin, args: installArgs } = parseCommand(installCmd);
           appendOutput(`$ ${installCmd}\n`);
           const installProcess = await container.spawn(installBin, installArgs);
           installProcess.output.pipeTo(
@@ -125,7 +145,7 @@ export const useWebContainer = ({
           appendOutput("$ No install step configured\n");
         }
 
-        const [devBin, ...devArgs] = devCmd.split(" ");
+        const { bin: devBin, args: devArgs } = parseCommand(devCmd);
         appendOutput(`\n$ ${devCmd}\n`);
         const devProcess = await container.spawn(devBin, devArgs);
         devProcess.output.pipeTo(

@@ -13,6 +13,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -27,6 +29,16 @@ jobs:
         env:
           RAILWAY_CONFIG_B64: ${{ secrets.RAILWAY_CONFIG_B64 }}
         run: |
+          if [ -n "$RAILWAY_TOKEN" ]; then
+            echo "Using RAILWAY_TOKEN for Railway CLI authentication."
+            exit 0
+          fi
+
+          if [ -z "$RAILWAY_CONFIG_B64" ]; then
+            echo "Missing Railway credentials. Set RAILWAY_TOKEN or RAILWAY_CONFIG_B64 in GitHub secrets."
+            exit 1
+          fi
+
           mkdir -p "$HOME/.railway"
           printf '%s' "$RAILWAY_CONFIG_B64" | base64 --decode > "$HOME/.railway/config.json"
 

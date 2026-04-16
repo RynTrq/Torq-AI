@@ -133,9 +133,10 @@ export async function POST(request: Request) {
 
   let queued = true;
   let warning: string | undefined;
+  let eventId: string | undefined;
 
   try {
-    await inngest.send({
+    const event = await inngest.send({
       name: "message/sent",
       data: {
         messageId: assistantMessageId,
@@ -144,6 +145,14 @@ export async function POST(request: Request) {
         message: prompt,
         modelId,
       },
+    });
+    eventId = event.ids[0];
+    console.info("[torq-ai][project-bootstrap] enqueued", {
+      conversationId,
+      eventId,
+      messageId: assistantMessageId,
+      modelId: modelId ?? null,
+      projectId,
     });
   } catch (error) {
     queued = false;
@@ -159,5 +168,5 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ projectId, queued, warning });
+  return NextResponse.json({ projectId, queued, warning, eventId });
 }

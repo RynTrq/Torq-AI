@@ -1,10 +1,10 @@
 import { hash } from "bcryptjs";
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { createUserWithPassword } from "@/lib/data/server";
 import { toErrorResponse } from "@/lib/api/error-response";
+import { prisma } from "@/lib/prisma";
 
 const requestSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
@@ -14,6 +14,17 @@ const requestSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    if (!process.env.DATABASE_URL?.trim()) {
+      return NextResponse.json(
+        {
+          error:
+            "Database is not configured. Set DATABASE_URL in your local environment and restart the dev server.",
+          code: "DATABASE_NOT_CONFIGURED",
+        },
+        { status: 503 },
+      );
+    }
+
     const body = await request.json();
     const { name, email, password } = requestSchema.parse(body);
     const normalizedEmail = email.trim().toLowerCase();
@@ -34,14 +45,30 @@ export async function POST(request: Request) {
 
     const passwordHash = await hash(password, 12);
 
-    await createUserWithPassword({
-      email: normalizedEmail,
-      name,
-      passwordHash,
+    await prisma.user.create({
+      data: {
+        email: normalizedEmail,
+        name,
+        passwordHash,
+      },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "An account with this email already exists. Sign in instead, or use a different email.",
+          code: "ACCOUNT_EXISTS",
+        },
+        { status: 409 },
+      );
+    }
+
     return toErrorResponse(error, "Unable to create account");
   }
 }
