@@ -6,6 +6,7 @@ import { z } from "zod";
 import { NextResponse } from "next/server";
 
 import { requireOwnedProject } from "@/lib/data/authz";
+import { toErrorResponse } from "@/lib/api/error-response";
 import { listProjectFiles } from "@/lib/data/server";
 import type { ProjectFileRecord, ProjectRecord } from "@/lib/data/types";
 import { getRunnableLanguage } from "@/lib/project-files";
@@ -271,95 +272,99 @@ const runProcess = (spec: RunSpec) => {
 };
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const { projectId, fileId } = requestSchema.parse(body);
-
-  let project: Awaited<ReturnType<typeof requireOwnedProject>>["project"];
-
   try {
-    ({ project } = await requireOwnedProject(projectId));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unauthorized";
-    return NextResponse.json(
-      { error: message },
-      { status: message === "Unauthorized" ? 401 : 404 },
-    );
-  }
+    const body = await request.json();
+    const { projectId, fileId } = requestSchema.parse(body);
 
-  const files = await listProjectFiles(projectId, { includeContent: true });
-  const file = files.find((candidate) => candidate._id === fileId);
-
-  if (!file || file.type !== "file") {
-    return NextResponse.json({ error: "File not found" }, { status: 404 });
-  }
-
-  if (file.storageId) {
-    return NextResponse.json(
-      { error: "Binary files cannot be run directly." },
-      { status: 400 },
-    );
-  }
-
-  try {
-    const { rootDir, filePathsById } = await materializeProjectWorkspace(
-      projectId,
-      files,
-    );
+    let project: Awaited<ReturnType<typeof requireOwnedProject>>["project"];
 
     try {
-      const relativePath = filePathsById.get(file._id);
-      if (!relativePath) {
-        return NextResponse.json({ error: "File path not found" }, { status: 404 });
-      }
-
-      const spec = buildRunSpec({
-        file,
-        relativePath,
-        rootDir,
-        project: {
-          _id: project.id,
-          _creationTime: project.createdAt.getTime(),
-          name: project.name,
-          ownerId: project.ownerId,
-          updatedAt: project.updatedAt.getTime(),
-          importStatus: project.importStatus?.toLowerCase() as ProjectRecord["importStatus"],
-          importError: project.importError ?? undefined,
-          exportStatus: project.exportStatus?.toLowerCase() as ProjectRecord["exportStatus"],
-          exportRepoUrl: project.exportRepoUrl ?? undefined,
-          exportError: project.exportError ?? undefined,
-          settings: (project.settings as ProjectRecord["settings"]) ?? undefined,
-        },
-        allFiles: files,
-      });
-
-      const result = await runProcess(spec);
-
-      const output = result.output.trim().length > 0
-        ? result.output
-        : result.exitCode === 0
-          ? "Process finished without output."
-          : "Process exited without output.";
-
-      const statusCode = result.timedOut ? 408 : result.exitCode === 0 ? 200 : 400;
-
+      ({ project } = await requireOwnedProject(projectId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unauthorized";
       return NextResponse.json(
-        {
-          command: spec.displayCommand,
-          exitCode: result.exitCode,
-          output,
-          timedOut: result.timedOut,
-        },
-        { status: statusCode },
+        { error: message },
+        { status: message === "Unauthorized" ? 401 : 404 },
       );
-    } finally {
-      await cleanupMaterializedWorkspace(rootDir);
+    }
+
+    const files = await listProjectFiles(projectId, { includeContent: true });
+    const file = files.find((candidate) => candidate._id === fileId);
+
+    if (!file || file.type !== "file") {
+      return NextResponse.json({ error: "File not found" }, { status: 404 });
+    }
+
+    if (file.storageId) {
+      return NextResponse.json(
+        { error: "Binary files cannot be run directly." },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const { rootDir, filePathsById } = await materializeProjectWorkspace(
+        projectId,
+        files,
+      );
+
+      try {
+        const relativePath = filePathsById.get(file._id);
+        if (!relativePath) {
+          return NextResponse.json({ error: "File path not found" }, { status: 404 });
+        }
+
+        const spec = buildRunSpec({
+          file,
+          relativePath,
+          rootDir,
+          project: {
+            _id: project.id,
+            _creationTime: project.createdAt.getTime(),
+            name: project.name,
+            ownerId: project.ownerId,
+            updatedAt: project.updatedAt.getTime(),
+            importStatus: project.importStatus?.toLowerCase() as ProjectRecord["importStatus"],
+            importError: project.importError ?? undefined,
+            exportStatus: project.exportStatus?.toLowerCase() as ProjectRecord["exportStatus"],
+            exportRepoUrl: project.exportRepoUrl ?? undefined,
+            exportError: project.exportError ?? undefined,
+            settings: (project.settings as ProjectRecord["settings"]) ?? undefined,
+          },
+          allFiles: files,
+        });
+
+        const result = await runProcess(spec);
+
+        const output = result.output.trim().length > 0
+          ? result.output
+          : result.exitCode === 0
+            ? "Process finished without output."
+            : "Process exited without output.";
+
+        const statusCode = result.timedOut ? 408 : result.exitCode === 0 ? 200 : 400;
+
+        return NextResponse.json(
+          {
+            command: spec.displayCommand,
+            exitCode: result.exitCode,
+            output,
+            timedOut: result.timedOut,
+          },
+          { status: statusCode },
+        );
+      } finally {
+        await cleanupMaterializedWorkspace(rootDir);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message.replace(/^Uncaught Error:\s*/, "")
+          : "Unable to run this file.";
+
+      return NextResponse.json({ error: message }, { status: 400 });
     }
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message.replace(/^Uncaught Error:\s*/, "")
-        : "Unable to run this file.";
-
-    return NextResponse.json({ error: message }, { status: 400 });
+    return toErrorResponse(error, "Unable to run this file");
   }
 }

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { NextResponse } from "next/server";
 
 import { inngest } from "@/inngest/client";
+import { toErrorResponse } from "@/lib/api/error-response";
 import { requireOwnedProject } from "@/lib/data/authz";
 import {
   deleteProject,
@@ -56,10 +57,9 @@ const cancelActiveProjectRuns = async (projectId: string) => {
 };
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const { projectId } = requestSchema.parse(body);
-
   try {
+    const body = await request.json();
+    const { projectId } = requestSchema.parse(body);
     const { user } = await requireOwnedProject(projectId);
 
     await cancelActiveProjectRuns(projectId);
@@ -70,6 +70,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, projectId });
   } catch (error) {
+    if (
+      error instanceof Error &&
+      /Unexpected end of JSON input|JSON/i.test(error.message)
+    ) {
+      return toErrorResponse(error, "Invalid project delete payload");
+    }
+
     const message =
       error instanceof Error
         ? error.message.replace(/^Uncaught Error:\s*/, "")

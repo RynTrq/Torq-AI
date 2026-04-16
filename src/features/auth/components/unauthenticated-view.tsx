@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { getProviders, signIn } from "next-auth/react";
 import {
   ArrowRightIcon,
@@ -24,17 +24,41 @@ export const UnauthenticatedView = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [githubEnabled, setGithubEnabled] = useState(false);
+  const [databaseReady, setDatabaseReady] = useState(true);
 
   useEffect(() => {
     let mounted = true;
 
-    void getProviders().then((providers) => {
-      if (!mounted) {
-        return;
-      }
+    const loadAuthOptions = async () => {
+      try {
+        const [providers, healthResponse] = await Promise.all([
+          getProviders(),
+          fetch("/api/health", { cache: "no-store" }).catch(() => null),
+        ]);
 
-      setGithubEnabled(Boolean(providers?.github));
-    });
+        if (!mounted) {
+          return;
+        }
+
+        setGithubEnabled(Boolean(providers?.github));
+
+        if (healthResponse) {
+          const healthBody = (await healthResponse.json()) as {
+            missing?: string[];
+          };
+
+          setDatabaseReady(!healthBody.missing?.includes("DATABASE_URL"));
+        }
+      } catch {
+        if (!mounted) {
+          return;
+        }
+
+        setGithubEnabled(false);
+      }
+    };
+
+    void loadAuthOptions();
 
     return () => {
       mounted = false;
@@ -48,6 +72,22 @@ export const UnauthenticatedView = () => {
 
     return mode === "signin" ? "Sign in to Torq-AI" : "Create Torq-AI account";
   }, [isSubmitting, mode]);
+
+  const credentialsDisabled =
+    isSubmitting ||
+    !email.trim() ||
+    !password.trim() ||
+    !databaseReady;
+
+  const handleFormSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (credentialsDisabled) {
+      return;
+    }
+
+    await handleCredentialsSubmit();
+  };
 
   const handleCredentialsSubmit = async () => {
     setIsSubmitting(true);
@@ -194,7 +234,7 @@ export const UnauthenticatedView = () => {
                   GitHub when you want repo access and account linking in the
                   same flow.
                 </p>
-                <div className="mt-8 space-y-4">
+                <form className="mt-8 space-y-4" onSubmit={(event) => void handleFormSubmit(event)}>
                   <div className="grid gap-3">
                     {mode === "signup" ? (
                       <Input
@@ -218,8 +258,8 @@ export const UnauthenticatedView = () => {
                   </div>
                   <Button
                     className="h-12 w-full rounded-2xl bg-gradient-to-r from-vscode-blue via-cyan-500 to-vscode-purple text-white shadow-[0_20px_50px_rgba(0,122,204,0.35)] hover:brightness-110"
-                    disabled={!email.trim() || !password.trim() || isSubmitting}
-                    onClick={() => void handleCredentialsSubmit()}
+                    disabled={credentialsDisabled}
+                    type="submit"
                   >
                     {isSubmitting ? (
                       <>
@@ -248,6 +288,12 @@ export const UnauthenticatedView = () => {
                     <div className="rounded-2xl border border-vscode-orange/20 bg-vscode-orange/8 p-4 text-sm leading-6 text-muted-foreground">
                       {authError}
                     </div>
+                  ) : !databaseReady ? (
+                    <div className="rounded-2xl border border-vscode-orange/20 bg-vscode-orange/8 p-4 text-sm leading-6 text-muted-foreground">
+                      Credentials login is unavailable on this machine because
+                      `DATABASE_URL` is not configured. Add it to `.env.local`
+                      and restart the app.
+                    </div>
                   ) : (
                     <div className="rounded-2xl border border-panel-border bg-panel-elevated p-4 text-sm leading-6 text-muted-foreground">
                       {mode === "signin"
@@ -270,7 +316,7 @@ export const UnauthenticatedView = () => {
                       ? "Need an account? Create one"
                       : "Already have an account? Sign in"}
                   </Button>
-                </div>
+                </form>
               </div>
             </section>
           </div>
