@@ -26,14 +26,8 @@ jobs:
       - name: Configure Railway CLI auth
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_CONFIG_B64: ${{ secrets.RAILWAY_CONFIG_B64 }}
         run: |
-          if [ -n "$RAILWAY_CONFIG_B64" ]; then
-            echo "Using RAILWAY_CONFIG_B64 for Railway CLI authentication."
-            mkdir -p "$HOME/.railway"
-            printf '%s' "$RAILWAY_CONFIG_B64" | base64 --decode > "$HOME/.railway/config.json"
-            exit 0
-          fi
+          rm -rf "$HOME/.railway"
 
           if [ -n "$RAILWAY_TOKEN" ]; then
             echo "RAILWAY_TOKEN=$RAILWAY_TOKEN" >> "$GITHUB_ENV"
@@ -41,7 +35,7 @@ jobs:
             exit 0
           fi
 
-          echo "Missing Railway credentials. Set RAILWAY_TOKEN or RAILWAY_CONFIG_B64 in GitHub secrets."
+          echo "Missing Railway credentials. Set a valid RAILWAY_TOKEN in GitHub secrets."
           exit 1
 
       - name: Install dependencies

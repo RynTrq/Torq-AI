@@ -166,9 +166,10 @@ export async function POST(request: Request) {
 
     if (shouldProcessInline) {
       let warning: string | undefined;
+      let createdFileIds: string[] = [];
 
       try {
-        await processMessageEvent({
+        const result = await processMessageEvent({
           eventData: {
             messageId: assistantMessageId,
             conversationId,
@@ -179,6 +180,7 @@ export async function POST(request: Request) {
           },
           runner: immediateMessageProcessingRunner,
         });
+        createdFileIds = result.createdFileIds ?? [];
       } catch (error) {
         warning =
           "Torq-AI hit an error while processing your message. Check the latest assistant reply for details.";
@@ -207,6 +209,7 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({
+        createdFileIds,
         success: true,
         messageId: assistantMessageId,
         queued: false,

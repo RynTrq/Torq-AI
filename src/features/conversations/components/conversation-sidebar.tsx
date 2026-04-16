@@ -43,6 +43,7 @@ import {
 } from "@/features/ai/store/use-model-store";
 
 import { Id } from "@/lib/data/app-types";
+import type { MessageRecord } from "@/lib/data/types";
 import { DEFAULT_CONVERSATION_TITLE } from "../constants";
 import { PastConversationsDialog } from "./past-conversations-dialog";
 
@@ -51,6 +52,32 @@ interface ConversationSidebarProps {
 };
 
 const PROCESSING_STALE_AFTER_MS = 30_000;
+
+const buildOptimisticMessage = ({
+  conversationId,
+  projectId,
+  role,
+  content,
+  status,
+  modelId,
+}: {
+  conversationId: Id<"conversations">;
+  projectId: Id<"projects">;
+  role: MessageRecord["role"];
+  content: string;
+  status?: MessageRecord["status"];
+  modelId?: string | null;
+}): MessageRecord => ({
+  _id: `optimistic-${role}-${crypto.randomUUID()}`,
+  _creationTime: Date.now(),
+  conversationId,
+  projectId,
+  role,
+  content,
+  status,
+  modelId: modelId ?? undefined,
+  updatedAt: Date.now(),
+});
 
 const getErrorMessage = async (error: unknown, fallback: string) => {
   if (error instanceof HTTPError) {
@@ -156,6 +183,8 @@ export const ConversationSidebar = ({
       return;
     }
 
+    setInput("");
+
     let conversationId = activeConversationId;
 
     if (!conversationId) {
@@ -167,6 +196,34 @@ export const ConversationSidebar = ({
 
     // Trigger Inngest function via API
     try {
+      const optimisticUserMessage = buildOptimisticMessage({
+        conversationId,
+        projectId,
+        role: "user",
+        content: trimmedMessage,
+      });
+      const optimisticAssistantMessage = buildOptimisticMessage({
+        conversationId,
+        projectId,
+        role: "assistant",
+        content: "",
+        status: "processing",
+        modelId,
+      });
+
+      queryClient.setQueryData<MessageRecord[]>(
+        ["messages", conversationId],
+        (previousMessages = []) => [
+          ...previousMessages.filter(
+            (existingMessage) =>
+              existingMessage._id !== optimisticUserMessage._id &&
+              existingMessage._id !== optimisticAssistantMessage._id,
+          ),
+          optimisticUserMessage,
+          optimisticAssistantMessage,
+        ],
+      );
+
       console.info("[torq-ai][client] submit", {
         conversationId,
         messageLength: trimmedMessage.length,
@@ -180,6 +237,7 @@ export const ConversationSidebar = ({
           modelId,
         },
       }).json<{
+        createdFileIds?: string[];
         eventId?: string;
         messageId?: string;
         queued?: boolean;
@@ -201,6 +259,12 @@ export const ConversationSidebar = ({
         queryKey: ["messages", conversationId],
       });
       await queryClient.invalidateQueries({
+        queryKey: ["project-files", projectId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["folder-contents", projectId],
+      });
+      await queryClient.invalidateQueries({
         queryKey: ["conversations", projectId],
       });
 
@@ -211,8 +275,10 @@ export const ConversationSidebar = ({
             : response.warning,
         );
       }
-      setInput("");
     } catch (error) {
+      await queryClient.invalidateQueries({
+        queryKey: ["messages", conversationId],
+      });
       console.error("[torq-ai][client] submit-failure", {
         conversationId,
         error,
@@ -325,7 +391,6 @@ export const ConversationSidebar = ({
                 placeholder="Ask Torq-AI anything..."
                 onChange={(e) => setInput(e.target.value)}
                 value={input}
-                disabled={isProcessing}
               />
             </PromptInputBody>
             <PromptInputFooter>

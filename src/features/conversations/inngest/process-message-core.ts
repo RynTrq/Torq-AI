@@ -4,7 +4,9 @@ import { NonRetriableError } from "inngest";
 import type { ConversationRecord, MessageRecord } from "@/lib/data/types";
 import {
   getConversationById,
+  createFile,
   listRecentMessages,
+  listProjectFiles,
   updateConversationTitle,
   updateMessageContent,
   updateMessageDebugInfo,
@@ -128,6 +130,42 @@ const limitCandidateModels = (
 
 const PROMPT_HISTORY_LIMIT = 6;
 const PROMPT_MESSAGE_CHARACTER_LIMIT = 2_000;
+const FILENAME_IN_PROMPT_REGEX =
+  /\b([a-z0-9][a-z0-9._/-]*\.(?:ts|tsx|js|jsx|mjs|cjs|py|java|cpp|c|cs|go|rs|php|rb|html|css|scss|json|md|txt|sql|sh|yml|yaml|xml))\b/i;
+const FILE_INTENT_REGEX =
+  /\b(file|files|component|script|source code|source file|download(?:able)?|save it)\b/i;
+const CODE_BLOCK_REGEX = /```([\w#+.-]*)\n([\s\S]*?)```/g;
+
+const LANGUAGE_FILE_NAME_MAP: Record<string, string> = {
+  c: "solution.c",
+  cpp: "solution.cpp",
+  csharp: "solution.cs",
+  css: "styles.css",
+  go: "main.go",
+  html: "index.html",
+  java: "Solution.java",
+  javascript: "solution.js",
+  js: "solution.js",
+  json: "data.json",
+  jsx: "component.jsx",
+  markdown: "notes.md",
+  md: "notes.md",
+  php: "index.php",
+  py: "solution.py",
+  python: "solution.py",
+  rb: "script.rb",
+  rs: "main.rs",
+  rust: "main.rs",
+  sh: "script.sh",
+  shell: "script.sh",
+  sql: "query.sql",
+  ts: "solution.ts",
+  tsx: "component.tsx",
+  typescript: "solution.ts",
+  xml: "config.xml",
+  yaml: "config.yml",
+  yml: "config.yml",
+};
 
 const toPromptSnippet = (content: string) => {
   const trimmed = content.trim().replace(/\s+/g, " ");
@@ -156,6 +194,116 @@ const buildConversationContext = (
     .join("\n\n");
 
   return `\n\n<conversation_context>\nUse this recent exchange for context, but answer only the latest user request. Do not repeat prior responses.\n\n${historyText}\n</conversation_context>`;
+};
+
+const extractCodeBlocks = (content: string) =>
+  Array.from(content.matchAll(CODE_BLOCK_REGEX)).map((match) => ({
+    code: match[2]?.trim() ?? "",
+    language: (match[1] ?? "").trim().toLowerCase(),
+  }));
+
+const sanitizeFileNameCandidate = (value: string) =>
+  value
+    .split("/")
+    .filter(Boolean)
+    .pop()
+    ?.replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const inferFileNameFromRequest = (message: string, language: string) => {
+  const explicitFileName = message.match(FILENAME_IN_PROMPT_REGEX)?.[1];
+  const sanitizedExplicitFileName = explicitFileName
+    ? sanitizeFileNameCandidate(explicitFileName)
+    : undefined;
+
+  if (sanitizedExplicitFileName) {
+    return sanitizedExplicitFileName;
+  }
+
+  if (language && LANGUAGE_FILE_NAME_MAP[language]) {
+    return LANGUAGE_FILE_NAME_MAP[language];
+  }
+
+  return "generated-file.txt";
+};
+
+const buildUniqueFileName = async ({
+  fileName,
+  projectId,
+}: {
+  fileName: string;
+  projectId: string;
+}) => {
+  const normalizedBaseName = sanitizeFileNameCandidate(fileName) || "generated-file.txt";
+  const dotIndex = normalizedBaseName.lastIndexOf(".");
+  const baseName =
+    dotIndex > 0 ? normalizedBaseName.slice(0, dotIndex) : normalizedBaseName;
+  const extension = dotIndex > 0 ? normalizedBaseName.slice(dotIndex) : "";
+
+  const existingFiles = await listProjectFiles(projectId);
+  const existingNames = new Set(
+    existingFiles
+      .filter((file) => file.type === "file" && !file.parentId)
+      .map((file) => file.name.toLowerCase()),
+  );
+
+  if (!existingNames.has(normalizedBaseName.toLowerCase())) {
+    return normalizedBaseName;
+  }
+
+  for (let index = 2; index <= 50; index += 1) {
+    const candidate = `${baseName}-${index}${extension}`;
+    if (!existingNames.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+
+  return `${baseName}-${Date.now()}${extension}`;
+};
+
+const maybeCreateFileFromAssistantResponse = async ({
+  assistantResponse,
+  message,
+  projectId,
+  usedToolCalls,
+}: {
+  assistantResponse: string;
+  message: string;
+  projectId: string;
+  usedToolCalls: boolean;
+}) => {
+  if (usedToolCalls || !FILE_INTENT_REGEX.test(message)) {
+    return {
+      assistantResponse,
+      createdFileIds: [] as string[],
+    };
+  }
+
+  const codeBlocks = extractCodeBlocks(assistantResponse);
+
+  if (codeBlocks.length !== 1 || !codeBlocks[0]?.code) {
+    return {
+      assistantResponse,
+      createdFileIds: [] as string[],
+    };
+  }
+
+  const fileName = await buildUniqueFileName({
+    fileName: inferFileNameFromRequest(message, codeBlocks[0].language),
+    projectId,
+  });
+
+  const createdFile = await createFile({
+    projectId,
+    name: fileName,
+    content: codeBlocks[0].code,
+  });
+
+  return {
+    assistantResponse: `Created \`${createdFile.name}\` in the project files. Open it from the Files panel to keep working.`,
+    createdFileIds: [createdFile._id],
+  };
 };
 
 const persistDebugStage = async ({
@@ -328,6 +476,7 @@ export const processMessageEvent = async ({
 
       let assistantResponse =
         "I processed your request. Let me know if you need anything else!";
+      let usedToolCalls = false;
 
       if (simpleChat) {
         const chatAgent = createAgent({
@@ -397,6 +546,9 @@ export const processMessageEvent = async ({
           MESSAGE_RUN_TIMEOUT_MS,
           `Timed out after ${MESSAGE_RUN_TIMEOUT_MS}ms while processing the request.`,
         );
+        usedToolCalls = result.state.results.some((networkResult) =>
+          networkResult.output.some((entry) => entry.type === "tool_call"),
+        );
         const lastResult = result.state.results.at(-1);
         const textMessage = lastResult?.output.find(
           (entry) => entry.type === "text" && entry.role === "assistant",
@@ -438,6 +590,14 @@ export const processMessageEvent = async ({
         assistantResponse =
           `Requested model unavailable, continued with ${candidateModel.label}.\n\n${assistantResponse}`;
       }
+
+      const artifactResult = await maybeCreateFileFromAssistantResponse({
+        assistantResponse,
+        message,
+        projectId,
+        usedToolCalls,
+      });
+      assistantResponse = artifactResult.assistantResponse;
 
       await runner.run("update-assistant-message", async () => {
         await updateMessageContent({
@@ -505,6 +665,7 @@ export const processMessageEvent = async ({
       }
 
       return {
+        createdFileIds: artifactResult.createdFileIds,
         success: true,
         conversationId,
         messageId,
